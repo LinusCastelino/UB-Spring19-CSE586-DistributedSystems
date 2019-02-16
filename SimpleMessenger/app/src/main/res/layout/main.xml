@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:orientation="vertical" >
+
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:background="#FFFFFF"
+        android:layout_weight="1.00" >
+        <TextView
+            android:id="@+id/local_text_display"
+            android:textColor="#0000AA"
+            android:fadeScrollbars="true"
+            android:layout_width="160dp"
+        	android:layout_height="wrap_content"
+            android:maxLines="18"
+            android:textIsSelectable="true"
+        	android:orientation="horizontal" />
+        <TextView
+            android:id="@+id/remote_text_display"
+            android:textColor="#AA0000"
+            android:gravity="right"
+            android:layout_width="160dp"
+        	android:layout_height="wrap_content"
+            android:maxLines="18"
+            android:textIsSelectable="true"
+        	android:orientation="horizontal" />
+    </LinearLayout>
+
+    <EditText
+        android:id="@+id/edit_text"
+        android:textColor="#000000"
+        android:background="#ADD8E6"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/hint_type" />
+
+</LinearLayout>

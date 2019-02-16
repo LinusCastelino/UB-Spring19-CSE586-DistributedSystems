@@ -1,0 +1,111 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:2:1-29:12
+INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:2:1-29:12
+INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:2:1-29:12
+INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:2:1-29:12
+MERGED from [android.arch.persistence.room:rxjava2:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/rxjava2-1.1.0.aar/5331815d00199ee3f317a3451c0fe812/AndroidManifest.xml:17:1-22:12
+MERGED from [android.arch.persistence.room:guava:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/guava-1.1.0.aar/0930bacb5ed9da98dfcbc883a174bce6/AndroidManifest.xml:17:1-22:12
+MERGED from [android.arch.persistence.room:runtime:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/runtime-1.1.0.aar/e44defece2defbde50fcff22ae54adb7/AndroidManifest.xml:17:1-22:12
+MERGED from [android.arch.persistence:db-framework:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/db-framework-1.1.0.aar/ed1f5aa137b7b70aedf79fb6535d68cb/AndroidManifest.xml:17:1-22:12
+MERGED from [android.arch.persistence:db:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/db-1.1.0.aar/6f03df71d09428347f654262414ca98b/AndroidManifest.xml:17:1-22:12
+MERGED from [android.arch.core:runtime:1.1.1] /home/linus/.gradle/caches/transforms-1/files-1.1/runtime-1.1.1.aar/d1f90b36dc1ff6c0e917f66e4ab9f123/AndroidManifest.xml:17:1-22:12
+MERGED from [com.android.support:support-core-utils:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-core-utils-26.1.0.aar/27e37feca28c8e63f8a6a79c9c65eec9/AndroidManifest.xml:17:1-31:12
+MERGED from [com.android.support:support-compat:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-compat-26.1.0.aar/785d92871a239c18683ee4cd3c04f7cb/AndroidManifest.xml:17:1-31:12
+INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:2:1-29:12
+INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:2:1-29:12
+INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:2:1-29:12
+	package
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:3:5-56
+		INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+		INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+	android:versionName
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:5:5-30
+		INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+		INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:2:11-69
+	android:versionCode
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:4:5-28
+		INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+		INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+uses-permission#android.permission.INTERNET
+ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:9:5-66
+	android:name
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:9:22-64
+application
+ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:11:5-27:19
+MERGED from [com.android.support:support-core-utils:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-core-utils-26.1.0.aar/27e37feca28c8e63f8a6a79c9c65eec9/AndroidManifest.xml:25:5-29:19
+MERGED from [com.android.support:support-core-utils:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-core-utils-26.1.0.aar/27e37feca28c8e63f8a6a79c9c65eec9/AndroidManifest.xml:25:5-29:19
+MERGED from [com.android.support:support-compat:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-compat-26.1.0.aar/785d92871a239c18683ee4cd3c04f7cb/AndroidManifest.xml:25:5-29:19
+MERGED from [com.android.support:support-compat:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-compat-26.1.0.aar/785d92871a239c18683ee4cd3c04f7cb/AndroidManifest.xml:25:5-29:19
+	android:label
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:14:9-41
+	android:icon
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:13:9-45
+	android:allowBackup
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:12:9-35
+	android:theme
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:15:9-40
+activity#edu.buffalo.cse.cse486586.groupmessenger1.GroupMessengerActivity
+ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:16:9-24:20
+	android:label
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:18:13-45
+	android:name
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:17:13-92
+intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
+ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:19:13-23:29
+action#android.intent.action.MAIN
+ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:20:17-69
+	android:name
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:20:25-66
+category#android.intent.category.LAUNCHER
+ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:22:17-77
+	android:name
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:22:27-74
+provider#edu.buffalo.cse.cse486586.groupmessenger1.GroupMessengerProvider
+ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:25:9-26:88
+	android:authorities
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:26:13-85
+	android:name
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml:25:19-98
+uses-sdk
+INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+MERGED from [android.arch.persistence.room:rxjava2:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/rxjava2-1.1.0.aar/5331815d00199ee3f317a3451c0fe812/AndroidManifest.xml:20:5-44
+MERGED from [android.arch.persistence.room:rxjava2:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/rxjava2-1.1.0.aar/5331815d00199ee3f317a3451c0fe812/AndroidManifest.xml:20:5-44
+MERGED from [android.arch.persistence.room:guava:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/guava-1.1.0.aar/0930bacb5ed9da98dfcbc883a174bce6/AndroidManifest.xml:20:5-44
+MERGED from [android.arch.persistence.room:guava:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/guava-1.1.0.aar/0930bacb5ed9da98dfcbc883a174bce6/AndroidManifest.xml:20:5-44
+MERGED from [android.arch.persistence.room:runtime:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/runtime-1.1.0.aar/e44defece2defbde50fcff22ae54adb7/AndroidManifest.xml:20:5-44
+MERGED from [android.arch.persistence.room:runtime:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/runtime-1.1.0.aar/e44defece2defbde50fcff22ae54adb7/AndroidManifest.xml:20:5-44
+MERGED from [android.arch.persistence:db-framework:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/db-framework-1.1.0.aar/ed1f5aa137b7b70aedf79fb6535d68cb/AndroidManifest.xml:20:5-44
+MERGED from [android.arch.persistence:db-framework:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/db-framework-1.1.0.aar/ed1f5aa137b7b70aedf79fb6535d68cb/AndroidManifest.xml:20:5-44
+MERGED from [android.arch.persistence:db:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/db-1.1.0.aar/6f03df71d09428347f654262414ca98b/AndroidManifest.xml:20:5-44
+MERGED from [android.arch.persistence:db:1.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/db-1.1.0.aar/6f03df71d09428347f654262414ca98b/AndroidManifest.xml:20:5-44
+MERGED from [android.arch.core:runtime:1.1.1] /home/linus/.gradle/caches/transforms-1/files-1.1/runtime-1.1.1.aar/d1f90b36dc1ff6c0e917f66e4ab9f123/AndroidManifest.xml:20:5-44
+MERGED from [android.arch.core:runtime:1.1.1] /home/linus/.gradle/caches/transforms-1/files-1.1/runtime-1.1.1.aar/d1f90b36dc1ff6c0e917f66e4ab9f123/AndroidManifest.xml:20:5-44
+MERGED from [com.android.support:support-core-utils:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-core-utils-26.1.0.aar/27e37feca28c8e63f8a6a79c9c65eec9/AndroidManifest.xml:21:5-23:61
+MERGED from [com.android.support:support-core-utils:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-core-utils-26.1.0.aar/27e37feca28c8e63f8a6a79c9c65eec9/AndroidManifest.xml:21:5-23:61
+MERGED from [com.android.support:support-compat:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-compat-26.1.0.aar/785d92871a239c18683ee4cd3c04f7cb/AndroidManifest.xml:21:5-23:58
+MERGED from [com.android.support:support-compat:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-compat-26.1.0.aar/785d92871a239c18683ee4cd3c04f7cb/AndroidManifest.xml:21:5-23:58
+INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+	tools:overrideLibrary
+		ADDED from [com.android.support:support-core-utils:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-core-utils-26.1.0.aar/27e37feca28c8e63f8a6a79c9c65eec9/AndroidManifest.xml:23:9-58
+	android:targetSdkVersion
+		INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+		INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+		ADDED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+		INJECTED from /home/linus/AndroidStudioProjects/GroupMessenger1/app/src/main/AndroidManifest.xml
+meta-data#android.support.VERSION
+ADDED from [com.android.support:support-core-utils:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-core-utils-26.1.0.aar/27e37feca28c8e63f8a6a79c9c65eec9/AndroidManifest.xml:26:9-28:38
+MERGED from [com.android.support:support-compat:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-compat-26.1.0.aar/785d92871a239c18683ee4cd3c04f7cb/AndroidManifest.xml:26:9-28:38
+MERGED from [com.android.support:support-compat:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-compat-26.1.0.aar/785d92871a239c18683ee4cd3c04f7cb/AndroidManifest.xml:26:9-28:38
+	android:value
+		ADDED from [com.android.support:support-core-utils:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-core-utils-26.1.0.aar/27e37feca28c8e63f8a6a79c9c65eec9/AndroidManifest.xml:28:13-35
+	android:name
+		ADDED from [com.android.support:support-core-utils:26.1.0] /home/linus/.gradle/caches/transforms-1/files-1.1/support-core-utils-26.1.0.aar/27e37feca28c8e63f8a6a79c9c65eec9/AndroidManifest.xml:27:13-51
