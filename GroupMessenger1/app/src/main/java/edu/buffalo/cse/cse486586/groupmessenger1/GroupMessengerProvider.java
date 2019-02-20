@@ -4,6 +4,7 @@ import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.database.Cursor;
 import android.database.MatrixCursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
 import android.util.Log;
 
@@ -52,10 +53,8 @@ public class GroupMessengerProvider extends ContentProvider {
          * take a look at the code for PA1.
          */
         Log.v("GMP: insert", values.toString());
-
-        GroupMessengerDB db = GroupMessengerDB.getGroupMessengerDBInstance(this.getContext());
-        GroupMessengerEntity gmEntity = new GroupMessengerEntity(values.get("key").toString(), values.get("value").toString());
-        db.groupMessengerDAO().addEntity(gmEntity);
+        GroupMessengerHelper gmHelper = new GroupMessengerHelper(this.getContext());
+        gmHelper.insert(values);
 
         return uri;
     }
@@ -88,13 +87,8 @@ public class GroupMessengerProvider extends ContentProvider {
          */
         Log.v("GMP: query", selection);
 
-        GroupMessengerDB db = GroupMessengerDB.getGroupMessengerDBInstance(this.getContext());
-        GroupMessengerEntity entity = db.groupMessengerDAO().getEntityByKey(selection);
+        GroupMessengerHelper gmHelper = new GroupMessengerHelper(this.getContext());
 
-        MatrixCursor mCursor = new MatrixCursor(new String[]{"key", "value"});
-
-        mCursor.addRow(new Object[]{entity.getKey(), entity.getValue()});
-
-        return mCursor;
+        return gmHelper.query(selection);
     }
 }
