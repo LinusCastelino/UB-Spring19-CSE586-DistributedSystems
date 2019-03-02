@@ -16,7 +16,7 @@ public class GroupMessengerHelper extends SQLiteOpenHelper {
     public static final String VALUE_COLUMN_NAME = "value";
 
     public static final String CREATE_TABLE_QUERY = "CREATE TABLE " + GM_TABLE_NAME
-                                                    + "(" + KEY_COLUMN_NAME + " text PRIMARY KEY"+
+                                                    + "( " + KEY_COLUMN_NAME + " text PRIMARY KEY, "+
                                                     VALUE_COLUMN_NAME + " text)";
     public static final String DROP_TABLE_NAME = "DROP TABLE IF EXISTS " + GM_TABLE_NAME;
 
