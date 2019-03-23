@@ -24,24 +24,36 @@ public class SimpleDhtProvider extends ContentProvider {
 
     private String selfPort;
 
+    private final SimpleDHTHelper dhtHelper = new SimpleDHTHelper(this.getContext());
+
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
-        // TODO Auto-generated method stub
-        return 0;
+        Log.d(TAG, "Delete - " + selection);
+
+        int deletedRows = 0;
+        if(selection.equals(ALL_PAIRS_QUERY)){
+            deletedRows = dhtHelper.delete(LOCAL_PAIRS_QUERY);
+            // send msg to other avds to delete from their local partitions
+        }
+        else if(selection.equals(LOCAL_PAIRS_QUERY)){
+            deletedRows = dhtHelper.delete(LOCAL_PAIRS_QUERY);
+        }
+        else{
+            deletedRows = dhtHelper.delete(selection);
+        }
+
+        return deletedRows;
     }
 
     @Override
     public String getType(Uri uri) {
-        // TODO Auto-generated method stub
         return null;
     }
 
     @Override
     public Uri insert(Uri uri, ContentValues values) {
-        // TODO Auto-generated method stub
-        Log.v(TAG, values.toString());
+        Log.v(TAG, "Insert - " + values.toString());
 
-        SimpleDHTHelper dhtHelper = new SimpleDHTHelper(this.getContext());
         dhtHelper.insert(values);
 
         return uri;
@@ -49,7 +61,6 @@ public class SimpleDhtProvider extends ContentProvider {
 
     @Override
     public boolean onCreate() {
-        // TODO Auto-generated method stub
 
         TelephonyManager tel = (TelephonyManager) getContext().getSystemService(Context.TELEPHONY_SERVICE);
         selfPort = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
@@ -63,22 +74,29 @@ public class SimpleDhtProvider extends ContentProvider {
             Log.e(TAG, ioe.getMessage());
             return false;
         }
-        return false;
+        return true;
     }
 
     @Override
     public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs,
             String sortOrder) {
-        // TODO Auto-generated method stub
-        Log.v(TAG, selection);
+        Log.v(TAG, "Query - " + selection);
 
-        SimpleDHTHelper dhtHelper = new SimpleDHTHelper(this.getContext());
-        return dhtHelper.query(selection);
+        if(selection.equals(ALL_PAIRS_QUERY)){
+            Cursor retCursor = dhtHelper.query(LOCAL_PAIRS_QUERY);
+            return null;
+        }
+        else if(selection.equals(LOCAL_PAIRS_QUERY)){
+            return dhtHelper.query(LOCAL_PAIRS_QUERY);
+        }
+        else{
+            return dhtHelper.query(selection);
+        }
+
     }
 
     @Override
     public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs) {
-        // TODO Auto-generated method stub
         return 0;
     }
 

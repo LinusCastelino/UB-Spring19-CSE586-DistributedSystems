@@ -46,7 +46,8 @@ public class SimpleDHTHelper extends SQLiteOpenHelper {
         SQLiteDatabase db = this.getReadableDatabase();
 
         if(queryKey.equals(LOCAL_PAIRS_QUERY)){
-            return null;
+            return db.query(TABLE_NAME, new String[]{KEY_COLUMN_NAME, VALUE_COLUMN_NAME}, null,
+                    null, null, null, null);
         }
         else{
             String selection = KEY_COLUMN_NAME + " = ?";
@@ -54,7 +55,18 @@ public class SimpleDHTHelper extends SQLiteOpenHelper {
             return db.query(TABLE_NAME, new String[]{KEY_COLUMN_NAME, VALUE_COLUMN_NAME}, selection,
                     new String[]{queryKey}, null, null, null);
         }
-
     }    //query()
+
+    public int delete(String deleteKey){
+        SQLiteDatabase db = this.getWritableDatabase();
+
+        if(deleteKey.equals(LOCAL_PAIRS_QUERY)){
+            return db.delete(TABLE_NAME, null, null);
+        }
+        else{
+            String whereClause = KEY_COLUMN_NAME + " = ?";
+            return db.delete(TABLE_NAME, whereClause, new String[]{deleteKey});
+        }
+    }    //delete()
 
 }    //SimpleDHTHelper
