@@ -25,44 +25,53 @@ public class SimpleDhtProvider extends ContentProvider {
     private final Integer SERVER_PORT = 10000;
 
     private final String NODE_0 = "5554";
-    private String selfPort = null;
-    private String predecessorPort = null;
-    private String sucessorPort = null;
-    private String selfId = null;
-    private String predecessorId = null;
-    private String successorId = null;
+    private final String KEY = "key";
+    private final String VALUE = "value";
 
     private final String LOCAL_PAIRS_QUERY = "@";
     private final String ALL_PAIRS_QUERY = "*";
 
     private final String MSG_DELIMETER = ":";
+    private final String CV_DELIMETER = "/";
     private final String DELETE_TAG = "D";
     private final String INSERT_TAG = "I";
     private final String QUERY_TAG = "Q";
     private final String JOIN_TAG = "J";
 
-    private boolean lastPartition = false;
+    private String selfPort = null;
+    private String selfId = null;
+    private String successorPort = null;
+    private String predecessorId = null;
 
     private final SimpleDHTHelper dhtHelper = new SimpleDHTHelper(this.getContext());
 
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
-        Log.d(TAG, "Delete - " + selection);
+        Log.d(TAG, "AVD " + selfPort + " Delete - " + selection);
 
         int deletedRows = 0;
+        String msgToSend = null;
         if(selection.equals(ALL_PAIRS_QUERY)){
             deletedRows = dhtHelper.delete(LOCAL_PAIRS_QUERY);
 
-            // send msg to other avds to delete from their local partitions
-            String msgToSend = DELETE_TAG + MSG_DELIMETER + selfPort;
+            msgToSend = DELETE_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + ALL_PAIRS_QUERY;
+            sendMessage(successorPort, msgToSend);
+
+            return deletedRows;
         }
         else if(selection.equals(LOCAL_PAIRS_QUERY)){
             deletedRows = dhtHelper.delete(LOCAL_PAIRS_QUERY);
         }
         else{
-            deletedRows = dhtHelper.delete(selection);
+            if(belongsToSelfPartition(selection)){
+                return dhtHelper.delete(selection);
+            }
+            else{
+                // query does not belong to current partition, send request to successor
+                msgToSend = DELETE_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selection;
+                sendMessage(successorPort, msgToSend);
+            }
         }
-
         return deletedRows; // returns the number of rows deleted in the local partition
     }
 
@@ -73,16 +82,23 @@ public class SimpleDhtProvider extends ContentProvider {
 
     @Override
     public Uri insert(Uri uri, ContentValues values) {
-        Log.v(TAG, "Insert - " + values.toString());
+        Log.v(TAG, "AVD " + selfPort + " : Insert - " + values.toString());
 
-        dhtHelper.insert(values);
+        String key = (String)values.get(KEY);
+
+        if(belongsToSelfPartition(key)){
+            dhtHelper.insert(values);
+        }
+        else{
+            String msgToSend = INSERT_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + values.get(KEY) + CV_DELIMETER + values.get(VALUE);
+            sendMessage(successorPort, msgToSend);
+        }
 
         return uri;
     }
 
     @Override
     public boolean onCreate() {
-
         TelephonyManager tel = (TelephonyManager) getContext().getSystemService(Context.TELEPHONY_SERVICE);
         selfPort = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
 
@@ -110,7 +126,7 @@ public class SimpleDhtProvider extends ContentProvider {
         else{
             // new node other than "5554" joining the chord
             String msgToSend = JOIN_TAG + MSG_DELIMETER + selfPort;
-            sendMessage(NODE_0, msgToSend);    // send a new join request to NODE_0
+            sendMessage((Integer.parseInt(NODE_0) *2) + "", msgToSend);    // send a new join request to NODE_0
         }
 
         return true;
@@ -118,14 +134,14 @@ public class SimpleDhtProvider extends ContentProvider {
 
     @Override
     public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
-        Log.v(TAG, "Query - " + selection);
+        Log.v(TAG, "AVD " + selfPort + " : Query - " + selection);
 
         String msgToSend = null;
         if(selection.equals(ALL_PAIRS_QUERY)){
             Cursor retCursor = dhtHelper.query(LOCAL_PAIRS_QUERY);
 
             msgToSend = QUERY_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + ALL_PAIRS_QUERY;
-            sendMessage(sucessorPort, msgToSend);
+            sendMessage(successorPort, msgToSend);
 
             return retCursor;
         }
@@ -133,24 +149,17 @@ public class SimpleDhtProvider extends ContentProvider {
             return dhtHelper.query(LOCAL_PAIRS_QUERY);
         }
         else{
-            String hashedQuery = null;
-            try{
-                hashedQuery = genHash(selection);
-            }
-            catch (NoSuchAlgorithmException nsae){
-                Log.e(TAG, "Exception occurred while generated hash of qery key");
-                nsae.printStackTrace();
-            }
-
-            if(belongsToSefPartition(hashedQuery)){
+            if(belongsToSelfPartition(selection)){
                 return dhtHelper.query(selection);
             }
             else{
                 // query does not belong to current partition, send request to successor
-                return null;
+                msgToSend = QUERY_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selection;
+                sendMessage(successorPort, msgToSend);
             }
         }
 
+        return null;
     }
 
     @Override
@@ -168,19 +177,31 @@ public class SimpleDhtProvider extends ContentProvider {
         return formatter.toString();
     }
 
-    public void sendMessage(String destination, String msgToSend){
+    public void sendMessage(String destination, String message){
+        new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, destination, message);
+    }    //sendMessage()
 
-    }    //sendMessage
+    public boolean belongsToSelfPartition(String key){
 
-    public boolean belongsToSefPartition(String hashedKey){
-        if(predecessorId.compareTo(hashedKey) < 0 && hashedKey.compareTo(selfId) <= 0)
-            return true;
-        if(predecessorId.compareTo(selfId) > 0    // last partition check
-            && predecessorId.compareTo(hashedKey) < 0)
-            return true;
+        String hashedKey = null;
+        try{
+            hashedKey = genHash(key);
+        }
+        catch (NoSuchAlgorithmException nsae){
+            Log.e(TAG, "Exception occurred while generated hash of query key");
+            nsae.printStackTrace();
+        }
+
+        if(hashedKey != null) {
+            if (predecessorId.compareTo(hashedKey) < 0 && hashedKey.compareTo(selfId) <= 0)
+                return true;
+            if (predecessorId.compareTo(selfId) > 0    // last partition check
+                    && predecessorId.compareTo(hashedKey) < 0)
+                return true;
+        }
 
         return false;
-    }
+    }    //belongsToSelfPartition()
 
     private class ServerTask extends AsyncTask<ServerSocket, String, Void>{
 
@@ -201,44 +222,62 @@ public class SimpleDhtProvider extends ContentProvider {
                     if(inputMsg != null){
                         Log.d(TAG, "ServerTask - Input msg received : " + inputMsg);
                         pw = new PrintWriter( socket.getOutputStream(), true);
+                        pw.println(inputMsg);
 
                         String msgArr[] = inputMsg.split(MSG_DELIMETER);
                         String msgTag = msgArr[0];
                         String msgSrc = msgArr[1];
                         String msg = msgArr[2];
 
-                        if(msgTag.equals(JOIN_TAG)){
+                        if(!msgSrc.equals(selfPort)){
+                            // stopping condition if the msg goes around the chord and comes back
+                            if(msgTag.equals(JOIN_TAG)){
 
-                        }
-                        else if(msgTag.equals(INSERT_TAG)){
+                            }
+                            else if(msgTag.equals(INSERT_TAG)){
+                                String[] record = msg.split(CV_DELIMETER);
 
-                        }
-                        else if(msgTag.equals(QUERY_TAG)){
-                            if(!msgSrc.equals(selfPort)){
+                                if(belongsToSelfPartition(record[0])){
+                                    ContentValues contentValues = new ContentValues();
+                                    contentValues.put(KEY, record[0]);
+                                    contentValues.put(VALUE, record[1]);
+                                    insert(null, contentValues);
+                                }
+                                else
+                                    sendMessage(successorPort, inputMsg);
+                            }
+                            else if(msgTag.equals(QUERY_TAG)){
                                 if(msg.equals(ALL_PAIRS_QUERY)){
                                     query(null, null, LOCAL_PAIRS_QUERY, null, null);
-                                    sendMessage(sucessorPort, inputMsg);
+                                    sendMessage(successorPort, inputMsg);
 
                                     // TODO : send search result back to source
                                 }
                                 else{
-                                    Cursor cursor = query(null, null, msg, null, null);
-
-                                    if(cursor == null){
-                                        // does not belong to current partition
-                                        // send request to successor
-                                        sendMessage(sucessorPort, inputMsg);
-
+                                    if(belongsToSelfPartition(msg)) {
+                                        Cursor cursor = query(null, null, msg, null, null);
                                     }
+                                    else{
+                                        sendMessage(successorPort, inputMsg);
+                                    }
+
+                                }
+                            }
+                            else if(msgTag.equals(DELETE_TAG)){
+                                if(msg.equals(ALL_PAIRS_QUERY)){
+                                    delete(null, LOCAL_PAIRS_QUERY, null);
+                                    sendMessage(successorPort, inputMsg);
+
+                                    // TODO : send search result back to source
+                                }
+                                else{
+                                    if(belongsToSelfPartition(msg))
+                                        delete(null, msg, null);
+                                    else
+                                        sendMessage(successorPort, inputMsg);
                                 }
                             }
                         }
-                        else if(msgTag.equals(DELETE_TAG)){
-                            if(!msgSrc.equals(selfPort)){
-
-                            }
-                        }
-
                     }
                 }
                 catch(Exception e){
@@ -268,28 +307,28 @@ public class SimpleDhtProvider extends ContentProvider {
     private class ClientTask extends AsyncTask<String, Void, Void>{
 
         @Override
-        protected Void doInBackground(String... strings) {
+        protected Void doInBackground(String... msgs) {
 
-            String msgToSend = strings[0];
-            Integer port = Integer.valueOf(strings[1]);
+            String port = (String)msgs[0];
+            String msgToSend = msgs[1];
+
             Socket socket = null;
             BufferedReader br = null;
             PrintWriter pw = null;
 
             try{
-                socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), port);
+                socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.valueOf(port));
 
                 pw = new PrintWriter(socket.getOutputStream(), true);
                 br = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
                 pw.println(msgToSend);
-                Log.d(TAG, "ClientTask - \"" + msgToSend + "\" msg sent to "+ port);
+                Log.d(TAG, "AVD " + selfPort + " : ClientTask - \"" + msgToSend + "\" msg sent to "+ port);
 
                 while(true){
                     if(br.readLine().equals(msgToSend))
                         break;
                 }
-
 
             }
             catch(Exception e){
@@ -313,5 +352,5 @@ public class SimpleDhtProvider extends ContentProvider {
 
             return null;
         }
-    }
-}
+    }    //ClientTask
+}    //SimpleDhtProvider
