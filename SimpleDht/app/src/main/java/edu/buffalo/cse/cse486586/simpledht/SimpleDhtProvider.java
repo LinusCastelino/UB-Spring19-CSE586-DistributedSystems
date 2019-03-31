@@ -16,17 +16,12 @@ import java.util.List;
 import java.util.Map;
 
 import android.content.ContentProvider;
-import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
-import android.database.CharArrayBuffer;
-import android.database.ContentObserver;
 import android.database.Cursor;
-import android.database.DataSetObserver;
 import android.database.MatrixCursor;
 import android.net.Uri;
 import android.os.AsyncTask;
-import android.os.Bundle;
 import android.telephony.TelephonyManager;
 import android.util.Log;
 
@@ -37,6 +32,7 @@ public class SimpleDhtProvider extends ContentProvider {
     private final String NODE_0 = "5554";
     private final String KEY = "key";
     private final String VALUE = "value";
+    private final String NULL_STR = "null";
 
     private final String LOCAL_PAIRS_QUERY = "@";
     private final String ALL_PAIRS_QUERY = "*";
@@ -292,7 +288,7 @@ public class SimpleDhtProvider extends ContentProvider {
         MatrixCursor cursor = new MatrixCursor(new String[]{KEY_COLUMN_NAME, VALUE_COLUMN_NAME});
 
         for(String result : results){
-            if(result != null && !result.equals("null")) {
+            if(result != null && !result.equals(NULL_STR)) {
                 String records[] = result.split(CURSOR_REC_DELIMETER);
                 for (int i = 0; i < records.length; i++) {
                     String record[] = records[i].split(CV_DELIMETER);
