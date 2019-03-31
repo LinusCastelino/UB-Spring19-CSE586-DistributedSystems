@@ -207,8 +207,10 @@ public class SimpleDhtProvider extends ContentProvider {
         if(hashedKey != null) {
             if (predecessorId.compareTo(hashedKey) < 0 && hashedKey.compareTo(selfId) <= 0)
                 return true;
+
+            Log.v(TAG, predecessorId.compareTo(selfId) + " " + predecessorId.compareTo(hashedKey) + " " + hashedKey.compareTo(selfId));
             if (predecessorId.compareTo(selfId) > 0    // last partition check
-                    && predecessorId.compareTo(hashedKey) < 0 || hashedKey.compareTo(selfId) <= 0)
+                    && (predecessorId.compareTo(hashedKey) < 0 || hashedKey.compareTo(selfId) <= 0))
                 return true;
         }
 
