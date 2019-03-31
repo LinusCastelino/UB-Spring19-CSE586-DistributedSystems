@@ -37,13 +37,97 @@ public class SimpleDhtProvider extends ContentProvider {
     private final String INSERT_TAG = "I";
     private final String QUERY_TAG = "Q";
     private final String JOIN_TAG = "J";
+    private final String SUCCESSOR_UPDATE_TAG = "S";
+    private final String PREDECESSOR_UPDATE_TAG = "P";
 
     private String selfPort = null;
     private String selfId = null;
     private String successorPort = null;
+    private String predecessorPort = null;
     private String predecessorId = null;
 
-    private final SimpleDHTHelper dhtHelper = new SimpleDHTHelper(this.getContext());
+    private SimpleDHTHelper dhtHelper;
+
+    @Override
+    public boolean onCreate() {
+        TelephonyManager tel = (TelephonyManager) getContext().getSystemService(Context.TELEPHONY_SERVICE);
+        selfPort = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
+
+        dhtHelper = new SimpleDHTHelper(this.getContext());
+
+        try{
+            ServerSocket serverSocket = new ServerSocket(SERVER_PORT);
+            new ServerTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, serverSocket);
+        }
+        catch (IOException ioe){
+            Log.e(TAG, "Error encountered while creating server socket");
+            Log.e(TAG, ioe.getMessage());
+            return false;
+        }
+
+        try {
+            selfId = genHash(selfPort);
+        }
+        catch (NoSuchAlgorithmException nsae){
+            Log.e(TAG, "Exception encountered while generating selfId");
+            nsae.printStackTrace();
+        }
+
+        if(!selfPort.equals(NODE_0)){
+            // new node other than "5554" joining the chord
+            String msgToSend = JOIN_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selfPort;
+            sendMessage(convertToPort(NODE_0), msgToSend);    // send a new join request to NODE_0
+        }
+
+        return true;
+    }
+
+    @Override
+    public Uri insert(Uri uri, ContentValues values) {
+        Log.v(TAG, "AVD " + selfPort + " : Insert - " + values.toString());
+
+        String key = (String)values.get(KEY);
+
+        if(belongsToSelfPartition(key)){
+            dhtHelper.insert(values);
+        }
+        else{
+            String msgToSend = INSERT_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + values.get(KEY) + CV_DELIMETER + values.get(VALUE);
+            sendMessage(successorPort, msgToSend);
+        }
+
+        return uri;
+    }
+
+    @Override
+    public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+        Log.v(TAG, "AVD " + selfPort + " : Query - " + selection);
+
+        String msgToSend = null;
+        if(selection.equals(ALL_PAIRS_QUERY)){
+            Cursor retCursor = dhtHelper.query(LOCAL_PAIRS_QUERY);
+
+            msgToSend = QUERY_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + ALL_PAIRS_QUERY;
+            sendMessage(successorPort, msgToSend);
+
+            return retCursor;
+        }
+        else if(selection.equals(LOCAL_PAIRS_QUERY)){
+            return dhtHelper.query(LOCAL_PAIRS_QUERY);
+        }
+        else{
+            if(belongsToSelfPartition(selection)){
+                return dhtHelper.query(selection);
+            }
+            else{
+                // query does not belong to current partition, send request to successor
+                msgToSend = QUERY_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selection;
+                sendMessage(successorPort, msgToSend);
+            }
+        }
+
+        return null;
+    }
 
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
@@ -81,90 +165,12 @@ public class SimpleDhtProvider extends ContentProvider {
     }
 
     @Override
-    public Uri insert(Uri uri, ContentValues values) {
-        Log.v(TAG, "AVD " + selfPort + " : Insert - " + values.toString());
-
-        String key = (String)values.get(KEY);
-
-        if(belongsToSelfPartition(key)){
-            dhtHelper.insert(values);
-        }
-        else{
-            String msgToSend = INSERT_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + values.get(KEY) + CV_DELIMETER + values.get(VALUE);
-            sendMessage(successorPort, msgToSend);
-        }
-
-        return uri;
-    }
-
-    @Override
-    public boolean onCreate() {
-        TelephonyManager tel = (TelephonyManager) getContext().getSystemService(Context.TELEPHONY_SERVICE);
-        selfPort = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
-
-        try{
-            ServerSocket serverSocket = new ServerSocket(SERVER_PORT);
-            new ServerTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, serverSocket);
-        }
-        catch (IOException ioe){
-            Log.e(TAG, "Error encountered while creating server socket");
-            Log.e(TAG, ioe.getMessage());
-            return false;
-        }
-
-        try {
-            selfId = genHash(selfPort);
-        }
-        catch (NoSuchAlgorithmException nsae){
-            Log.e(TAG, "Exception encountered while generating selfId");
-            nsae.printStackTrace();
-        }
-
-        if(selfPort.equals(NODE_0)){
-
-        }
-        else{
-            // new node other than "5554" joining the chord
-            String msgToSend = JOIN_TAG + MSG_DELIMETER + selfPort;
-            sendMessage((Integer.parseInt(NODE_0) *2) + "", msgToSend);    // send a new join request to NODE_0
-        }
-
-        return true;
-    }
-
-    @Override
-    public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
-        Log.v(TAG, "AVD " + selfPort + " : Query - " + selection);
-
-        String msgToSend = null;
-        if(selection.equals(ALL_PAIRS_QUERY)){
-            Cursor retCursor = dhtHelper.query(LOCAL_PAIRS_QUERY);
-
-            msgToSend = QUERY_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + ALL_PAIRS_QUERY;
-            sendMessage(successorPort, msgToSend);
-
-            return retCursor;
-        }
-        else if(selection.equals(LOCAL_PAIRS_QUERY)){
-            return dhtHelper.query(LOCAL_PAIRS_QUERY);
-        }
-        else{
-            if(belongsToSelfPartition(selection)){
-                return dhtHelper.query(selection);
-            }
-            else{
-                // query does not belong to current partition, send request to successor
-                msgToSend = QUERY_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selection;
-                sendMessage(successorPort, msgToSend);
-            }
-        }
-
-        return null;
-    }
-
-    @Override
     public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs) {
         return 0;
+    }
+
+    public String convertToPort(String avdID){
+        return (Integer.parseInt(avdID) *2) + "";
     }
 
     private String genHash(String input) throws NoSuchAlgorithmException {
@@ -183,6 +189,10 @@ public class SimpleDhtProvider extends ContentProvider {
 
     public boolean belongsToSelfPartition(String key){
 
+        if(predecessorId == null && successorPort == null){
+            return true;
+        }
+
         String hashedKey = null;
         try{
             hashedKey = genHash(key);
@@ -192,11 +202,13 @@ public class SimpleDhtProvider extends ContentProvider {
             nsae.printStackTrace();
         }
 
+//        Log.v(TAG, "predecessor id - " + predecessorId + " || hashed key - " + hashedKey + " || selfId - " + selfId);
+
         if(hashedKey != null) {
             if (predecessorId.compareTo(hashedKey) < 0 && hashedKey.compareTo(selfId) <= 0)
                 return true;
             if (predecessorId.compareTo(selfId) > 0    // last partition check
-                    && predecessorId.compareTo(hashedKey) < 0)
+                    && predecessorId.compareTo(hashedKey) < 0 || hashedKey.compareTo(selfId) <= 0)
                 return true;
         }
 
@@ -232,7 +244,56 @@ public class SimpleDhtProvider extends ContentProvider {
                         if(!msgSrc.equals(selfPort)){
                             // stopping condition if the msg goes around the chord and comes back
                             if(msgTag.equals(JOIN_TAG)){
+                                String succUpdateMsg = null;
+                                if(predecessorId == null && successorPort == null){
+                                    // first node join
+                                    Log.d(TAG, "AVD " + selfPort + " : First node join request received from " + msg);
+                                    successorPort = convertToPort(msg);
 
+                                    succUpdateMsg = SUCCESSOR_UPDATE_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selfPort;
+                                    sendMessage(successorPort, succUpdateMsg);
+
+                                    String predUpdateMsg = PREDECESSOR_UPDATE_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selfPort;
+                                    sendMessage(successorPort, predUpdateMsg);
+                                }
+                                else {
+                                    if (belongsToSelfPartition(msg)) {
+                                        Log.d(TAG, "AVD " + selfPort + " : Node join request received from "
+                                                + msg + ". Belongs to current partition");
+
+                                        // update the successor of the current node's predecessor to be the newly joined node
+                                        succUpdateMsg = SUCCESSOR_UPDATE_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + msg;
+                                        sendMessage(predecessorPort, succUpdateMsg);
+
+                                        // udpate the successor of the newly joined node to be the current node
+                                        succUpdateMsg = SUCCESSOR_UPDATE_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selfPort;
+                                        sendMessage(convertToPort(msg), succUpdateMsg);
+
+                                        // update current node's predecessor
+                                        predecessorId = genHash(msg);
+                                        predecessorPort = convertToPort(msg);
+                                    } else {
+                                        Log.d(TAG, "AVD " + selfPort + " : Node join request received from " + msg
+                                                + ". Does not belong to current partition. Forwarded request to " + successorPort);
+                                        sendMessage(successorPort, inputMsg);
+                                    }
+                                }
+                            }
+                            else if(msgTag.equals(SUCCESSOR_UPDATE_TAG)){
+                                successorPort = convertToPort(msg);
+
+                                Log.d(TAG, "AVD " + selfPort + " : New successor - " + successorPort);
+
+                                // inform the successor that this node is its predecessor
+                                String predUpdateMsg = PREDECESSOR_UPDATE_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selfPort;
+                                sendMessage(successorPort, predUpdateMsg);
+                            }
+                            else if(msgTag.equals(PREDECESSOR_UPDATE_TAG)){
+                                // update current node's predecessor
+                                predecessorId = genHash(msg);
+                                predecessorPort = convertToPort(msg);
+
+                                Log.d(TAG, "AVD " + selfPort + " : New predecessor - " + predecessorPort);
                             }
                             else if(msgTag.equals(INSERT_TAG)){
                                 String[] record = msg.split(CV_DELIMETER);
