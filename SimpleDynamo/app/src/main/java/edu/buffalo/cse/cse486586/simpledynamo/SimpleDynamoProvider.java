@@ -23,9 +23,17 @@ import android.util.Log;
 
 public class SimpleDynamoProvider extends ContentProvider {
 	private final String TAG = SimpleDynamoProvider.class.getSimpleName();
+
 	private final Integer SERVER_PORT = 10000;
+	private final String KEY = "key";
+	private final String VALUE = "value";
+	private final String MSG_DELIMETER = ":";
+	private final String CV_DELIMETER = "/";
+	private final String INSERT_TAG = "I";
 
 	private String selfPort = null;
+	private String selfId = null;
+
 
 	private SimpleDynamoHelper dynamoHelper = null;
 
@@ -50,8 +58,31 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 	@Override
 	public Uri insert(Uri uri, ContentValues values) {
-		// TODO Auto-generated method stub
-		return null;
+		Log.d(TAG, "Insert - " + values.toString());
+
+		String insertKey = null;
+		try{
+			insertKey = (String)values.get(KEY);
+			String keyHash = genHash(insertKey);
+			DHTNode partitionCoordinator = getPartitionCoordinator(keyHash);
+			if(partitionCoordinator.getHash().equals(selfId)){
+				dynamoHelper.insert(values);
+
+				// TODO : create replicas in next two successors
+			}
+			else{
+				String msgToSend = INSERT_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + insertKey +
+						CV_DELIMETER + values.get(VALUE);
+				sendMessage(partitionCoordinator.getPort(), msgToSend);    //TODO successor port
+			}
+
+		}
+		catch (NoSuchAlgorithmException nsae){
+			Log.e(TAG, "Exception encountered while generating hash for key " + insertKey);
+			nsae.printStackTrace();
+		}
+
+		return uri;
 	}
 
 	@Override
@@ -90,6 +121,15 @@ public class SimpleDynamoProvider extends ContentProvider {
         return formatter.toString();
     }
 
+    public void sendMessage(String port, String msg){
+		new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, port, msg);
+	}
+
+	public DHTNode getPartitionCoordinator(String keyHash){
+
+		return null; // TODO - Return coordinator node
+	}
+
     private class ServerTask extends AsyncTask<ServerSocket, String, Void>{
 
 		@Override
@@ -101,9 +141,9 @@ public class SimpleDynamoProvider extends ContentProvider {
 	private class ClientTask extends AsyncTask<String, Void, Void>{
 
 		@Override
-		protected Void doInBackground(String... strings) {
-			String port = null;				// #########################3
-			String msgToSend = null;      // ###########################3
+		protected Void doInBackground(String... msgs) {
+			String port = msgs[0];
+			String msgToSend = msgs[1];
 
 			Socket socket = null;
 			BufferedReader br = null;
@@ -136,10 +176,42 @@ public class SimpleDynamoProvider extends ContentProvider {
 				e.printStackTrace();
 			}
 			finally {
-
+				try{
+					if(br != null)
+						br.close();
+					if(pw != null)
+						pw.close();
+					if(socket != null)
+						socket.close();
+				}
+				catch (Exception e){
+					Log.e(TAG, "Exception encountered while closing streams");
+					e.printStackTrace();
+				}
 			}
 
 			return null;
+		}
+	}
+
+	private class DHTNode{
+		private String port;
+		private String hash;
+
+		public void setPort(String port){
+			this.port = port;
+		}
+
+		public String getPort(){
+			return this.port;
+		}
+
+		public void setHash(String hash){
+			this.hash = hash;
+		}
+
+		public String getHash(){
+			return this.hash;
 		}
 	}
 }
