@@ -137,10 +137,12 @@ public class SimpleDynamoProvider extends ContentProvider {
 					selfInsertCV.put(VALUE, ++oldVersionNum + MSG_DELIMETER + insertValue);
 				}
 				dynamoHelper.insert(selfInsertCV);
-				sendMessageToReplicas(INSERT_REPLICA_TAG + MSG_DELIMETER + insertKey + CV_DELIMETER + insertValue);
+				sendMessageToReplicas(INSERT_REPLICA_TAG + MSG_DELIMETER + selfPort +
+						MSG_DELIMETER + insertKey + CV_DELIMETER + insertValue);
 			}
 			else{
-				String msgToSend = INSERT_TAG + MSG_DELIMETER + insertKey + CV_DELIMETER + values.get(VALUE);
+				String msgToSend = INSERT_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + insertKey +
+									CV_DELIMETER + values.get(VALUE);
 				sendMessage(convertToPort(partitionCoordinator.getPort()), msgToSend);
 			}
 		}
@@ -173,7 +175,37 @@ public class SimpleDynamoProvider extends ContentProvider {
 	@Override
 	public Cursor query(Uri uri, String[] projection, String selection,
 						String[] selectionArgs, String sortOrder) {
-		// TODO Auto-generated method stub
+
+		if(selection.equals(ALL_PAIRS_QUERY)){
+			Cursor cursor = dynamoHelper.query(LOCAL_PAIRS_QUERY);
+
+
+
+
+		}
+		else if(selection.equals(LOCAL_PAIRS_QUERY)){
+			return dynamoHelper.query(LOCAL_PAIRS_QUERY);
+		}
+		else{
+			try{
+				String keyHash = genHash(selection);
+				DHTNode partitionCoordinator = getPartitionCoordinator(keyHash);
+				if(partitionCoordinator.getPort().equals(selfPort)){
+					return dynamoHelper.query(selection);
+				}
+				else{
+					List<String> queryResults = new ArrayList<String>();
+					queryMap.put(selection, queryResults);
+					String msgToSend = QUERY_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selection;
+					
+				}
+			}
+			catch(NoSuchAlgorithmException nsae){
+				Log.e(TAG, "Error occured while generating hash of the query key " + selection);
+				nsae.printStackTrace();
+			}
+		}
+
 		return null;
 	}
 
@@ -184,7 +216,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 		if(selection.equals(ALL_PAIRS_QUERY)){
 			dynamoHelper.delete(LOCAL_PAIRS_QUERY);
 
-			String msgToSend = DELETE_TAG + MSG_DELIMETER + LOCAL_PAIRS_QUERY;
+			String msgToSend = DELETE_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + LOCAL_PAIRS_QUERY;
 			// send delete request to all other nodes
 			for(int i=0; i<dhtNodes.size(); i++){
 				if(i != selfDhtPosition){
@@ -205,7 +237,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 					sendMessageToReplicas(DELETE_REPLICA_TAG + MSG_DELIMETER + selection);
 				}
 				else{
-					String msgToSend = DELETE_TAG + MSG_DELIMETER + selection;
+					String msgToSend = DELETE_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selection;
 					sendMessage(convertToPort(partitionCoordinator.getPort()), msgToSend);
 				}
 			}
@@ -299,7 +331,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 						String msgArr[] = inputMsg.split(MSG_DELIMETER);
 						String msgTag = msgArr[0];
-						String msg = msgArr[1];
+						String msgSrc = msgArr[1];
+						String msg = msgArr[2];
 
 						if(msgTag.equals(INSERT_TAG)){
 							String[] record = msg.split(CV_DELIMETER);
