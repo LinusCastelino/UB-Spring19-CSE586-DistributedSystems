@@ -11,6 +11,7 @@ import java.net.SocketTimeoutException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Formatter;
@@ -22,6 +23,7 @@ import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
+import android.database.MatrixCursor;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.telephony.TelephonyManager;
@@ -33,17 +35,24 @@ public class SimpleDynamoProvider extends ContentProvider {
 	private final String[] DHT_NODE_PORTS = new String[]{"5554", "5556", "5558", "5560", "5562"};
 
 	private final Integer SERVER_PORT = 10000;
+	private final Integer MIN_WRITE_COUNT = 2;
+	private final Integer MIN_READ_COUNT = 2;
 	private final String KEY = "key";
 	private final String VALUE = "value";
 	private final String LOCAL_PAIRS_QUERY = "@";
 	private final String ALL_PAIRS_QUERY = "*";
 	private final String MSG_DELIMETER = ":";
 	private final String CV_DELIMETER = "/";
+	private final String CURSOR_REC_DELIMETER = "#";
 	private final String INSERT_TAG = "I";
 	private final String INSERT_REPLICA_TAG = "IR";
+	private final String INSERT_ACK_TAG = "IA";
 	private final String DELETE_TAG = "D";
 	private final String DELETE_REPLICA_TAG = "DR";
+	private final String DELETE_ACK_TAG = "DA";
 	private final String QUERY_TAG = "Q";
+	private final String QUERY_RESPONSE_TAG = "QR";
+	private final String NULL_STR = "null";
 
 	private String selfPort = null;
 	private String selfId = null;
@@ -53,7 +62,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 	private SimpleDynamoHelper dynamoHelper = null;
 
 	private Map<String, List<String>> queryMap;
-	private Map<String, Integer> writeMap;
+	private Map<String, Integer> quorumWriteCheck;
 
 	@Override
 	public boolean onCreate() {
@@ -81,7 +90,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 		}
 
 		queryMap = new HashMap<String, List<String>>();
-		writeMap = new HashMap<String, Integer>();
+		quorumWriteCheck = new HashMap<String, Integer>();
 
 		dhtNodes = new ArrayList<DHTNode>();
 		for(String nodePort : DHT_NODE_PORTS){
@@ -117,33 +126,32 @@ public class SimpleDynamoProvider extends ContentProvider {
 		try{
 			insertKey = (String)values.get(KEY);
 			String keyHash = genHash(insertKey);
-			DHTNode partitionCoordinator = getPartitionCoordinator(keyHash);
-			if(partitionCoordinator.getHash().equals(selfId)){
+			List<Object> partitionCoordinatorInfo = getPartitionCoordinatorInfo(keyHash);
+			DHTNode partitionCoordinatorNode = (DHTNode)(partitionCoordinatorInfo.get(1));
+			if(partitionCoordinatorNode.getHash().equals(selfId)){
 				// created a new CV object so that the insert does not override a higher version
 				// number with an older one in replicas (in case this node experiences a failure)
-				ContentValues selfInsertCV = new ContentValues();
-				selfInsertCV.put(KEY, insertKey);
-				String insertValue = (String)values.get(VALUE);
-				Cursor cursor = dynamoHelper.query(insertKey);
-				if(cursor.getCount() == 0){
-					// first insert for the key
-					selfInsertCV.put(VALUE, "1" + MSG_DELIMETER + insertValue);    // Versioning starts with 1
-				}
-				else{
-					// updated entry
-					cursor.moveToFirst();
-					String storedValue = cursor.getString(cursor.getColumnIndex(VALUE));
-					Integer oldVersionNum = Integer.valueOf(storedValue.split(MSG_DELIMETER)[0]);
-					selfInsertCV.put(VALUE, ++oldVersionNum + MSG_DELIMETER + insertValue);
-				}
-				dynamoHelper.insert(selfInsertCV);
-				sendMessageToReplicas(INSERT_REPLICA_TAG + MSG_DELIMETER + selfPort +
-						MSG_DELIMETER + insertKey + CV_DELIMETER + insertValue);
+				insertVersionedEntry(values);
+				quorumWriteCheck.put(insertKey, 1);
+				sendMessageToReplicas(selfDhtPosition, INSERT_REPLICA_TAG + MSG_DELIMETER
+						+ selfPort + MSG_DELIMETER + insertKey + CV_DELIMETER + values.get(VALUE));
 			}
 			else{
 				String msgToSend = INSERT_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + insertKey +
 									CV_DELIMETER + values.get(VALUE);
-				sendMessage(convertToPort(partitionCoordinator.getPort()), msgToSend);
+				quorumWriteCheck.put(insertKey, 0);
+				sendMessage(convertToPort(partitionCoordinatorNode.getPort()), msgToSend);
+			}
+
+			synchronized (insertKey){
+				try {
+					insertKey.wait();
+				}
+				catch(InterruptedException ie){
+					Log.e(TAG, "InterruptedException encountered while waiting on quorum write condition" +
+							" (insert) for key " + insertKey);
+					ie.printStackTrace();
+				}
 			}
 		}
 		catch (NoSuchAlgorithmException nsae){
@@ -153,15 +161,15 @@ public class SimpleDynamoProvider extends ContentProvider {
 		return uri;
 	}
 
-	public void insertReplica(ContentValues values) {
-		Log.d(TAG, "Insert Replica - " + values.toString());
+	public void insertVersionedEntry(ContentValues values) {
+		Log.d(TAG, "Inserting Versioned Entry of - " + values.toString());
 
 		String insertKey = (String)values.get(KEY);
 		String insertValue = (String)values.get(VALUE);
 		Cursor cursor = dynamoHelper.query(insertKey);
 		if(cursor.getCount() == 0){
 			// first insert for the key
-			values.put(VALUE, 1 + MSG_DELIMETER + insertValue);
+			values.put(VALUE, 0 + MSG_DELIMETER + insertValue);   // 0 versioning used
 		}
 		else{
 			cursor.moveToFirst();
@@ -179,25 +187,36 @@ public class SimpleDynamoProvider extends ContentProvider {
 		if(selection.equals(ALL_PAIRS_QUERY)){
 			Cursor cursor = dynamoHelper.query(LOCAL_PAIRS_QUERY);
 
+			String cursorToStr = convertCursorToString(cursor);
+			List<String> queryResults = new ArrayList<String>();
+			queryResults.add(cursorToStr);
+			queryMap.put(selection, queryResults);
 
-
-
+			String msgToSend = QUERY_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + ALL_PAIRS_QUERY;
+			// send delete request to all other nodes
+			for(int i=0; i<dhtNodes.size(); i++){
+				if(i != selfDhtPosition){
+					// to avoid infinite loop
+					sendMessage(convertToPort(dhtNodes.get(i).getPort()), msgToSend);
+				}
+			}
 		}
 		else if(selection.equals(LOCAL_PAIRS_QUERY)){
 			return dynamoHelper.query(LOCAL_PAIRS_QUERY);
 		}
-		else{
+		else{    // key query
 			try{
 				String keyHash = genHash(selection);
-				DHTNode partitionCoordinator = getPartitionCoordinator(keyHash);
-				if(partitionCoordinator.getPort().equals(selfPort)){
+				List<Object> partitionCoordinatorInfo = getPartitionCoordinatorInfo(keyHash);
+				DHTNode partitionCoordinatorNode = (DHTNode)(partitionCoordinatorInfo.get(1));
+				if(partitionCoordinatorNode.getPort().equals(selfPort)){
 					return dynamoHelper.query(selection);
 				}
 				else{
 					List<String> queryResults = new ArrayList<String>();
 					queryMap.put(selection, queryResults);
 					String msgToSend = QUERY_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selection;
-					
+
 				}
 			}
 			catch(NoSuchAlgorithmException nsae){
@@ -206,7 +225,20 @@ public class SimpleDynamoProvider extends ContentProvider {
 			}
 		}
 
-		return null;
+		synchronized (selection){
+			try{
+				selection.wait();
+			}
+			catch (InterruptedException ie){
+				Log.e(TAG, "InterruptedException encountered while waiting on quorum read condition" +
+						" for key " + selection);
+				ie.printStackTrace();
+			}
+		}
+
+		Cursor resultCursor = convertStringToCursor(queryMap.get(selection));
+		queryMap.remove(selection);
+		return resultCursor;
 	}
 
 	@Override
@@ -231,14 +263,29 @@ public class SimpleDynamoProvider extends ContentProvider {
 		else{
 			try{
 				String keyHash = genHash(selection);
-				DHTNode partitionCoordinator = getPartitionCoordinator(keyHash);
-				if(partitionCoordinator.getPort().equals(selfPort)){
+				List<Object> partitionCoordinatorInfo = getPartitionCoordinatorInfo(keyHash);
+				DHTNode partitionCoordinatorNode = (DHTNode)(partitionCoordinatorInfo.get(1));
+				if(partitionCoordinatorNode.getPort().equals(selfPort)){
 					dynamoHelper.delete(selection);
-					sendMessageToReplicas(DELETE_REPLICA_TAG + MSG_DELIMETER + selection);
+					quorumWriteCheck.put(selection, 1);
+					sendMessageToReplicas(selfDhtPosition, DELETE_REPLICA_TAG +
+							MSG_DELIMETER + selfPort + MSG_DELIMETER + selection);
 				}
 				else{
 					String msgToSend = DELETE_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selection;
-					sendMessage(convertToPort(partitionCoordinator.getPort()), msgToSend);
+					quorumWriteCheck.put(selection, 0);
+					sendMessage(convertToPort(partitionCoordinatorNode.getPort()), msgToSend);
+				}
+
+				synchronized (selection){
+					try{
+						selection.wait();
+					}
+					catch(InterruptedException ie){
+						Log.e(TAG, "InterruptedException encountered while waiting on quorum " +
+								"write condition (delete) for key " + selection);
+						ie.printStackTrace();
+					}
 				}
 			}
 			catch (NoSuchAlgorithmException nsae){
@@ -277,14 +324,52 @@ public class SimpleDynamoProvider extends ContentProvider {
 		new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, port, msg);
 	}
 
-	public void sendMessageToReplicas(String msgToSend){
+	public void sendMessageToReplicas(Integer dhtPosition, String msgToSend){
 		for(int i=1; i<3; i++){
-			DHTNode replicaSuccessor = dhtNodes.get((selfDhtPosition + i) % dhtNodes.size());
+			DHTNode replicaSuccessor = dhtNodes.get((dhtPosition + i) % dhtNodes.size());
 			sendMessage(convertToPort(replicaSuccessor.getPort()), msgToSend);
 		}
 	}
 
-	public DHTNode getPartitionCoordinator(String keyHash){
+	public String convertCursorToString(Cursor cursor){
+
+		if(cursor.moveToFirst()){
+			String cursorToStr = "";
+			int keyColumnIndex = cursor.getColumnIndex(KEY);
+			int valueColumnIndex = cursor.getColumnIndex(VALUE);
+
+			do{
+				cursorToStr += cursor.getString(keyColumnIndex);
+				cursorToStr += CV_DELIMETER;
+				cursorToStr += cursor.getString(valueColumnIndex);
+				cursorToStr += CURSOR_REC_DELIMETER;
+			}while(cursor.moveToNext());
+
+			cursorToStr = cursorToStr.substring(0, cursorToStr.length()-1);    // removing the delimeter at the end
+			return cursorToStr;
+		}
+
+		return null;
+	}    //convertCursorToSting()
+
+	public Cursor convertStringToCursor(List<String> results){
+		MatrixCursor cursor = new MatrixCursor(new String[]{KEY, VALUE});
+
+		for(String result : results){
+			if(!result.equals(NULL_STR)) {
+				String records[] = result.split(CURSOR_REC_DELIMETER);
+				for (int i = 0; i < records.length; i++) {
+					String record[] = records[i].split(CV_DELIMETER);
+					cursor.newRow().add(KEY, record[0])
+							.add(VALUE, record[1]);
+				}
+			}
+		}
+
+		return cursor;
+	}    //convertStringToCursor()
+
+	public List<Object> getPartitionCoordinatorInfo(String keyHash){
 
 		Integer limit = dhtNodes.size();
 		for(int c=0, p = limit-1 ; c < limit; c++, p++){
@@ -299,9 +384,33 @@ public class SimpleDynamoProvider extends ContentProvider {
 				flag = true;
 
 			if(flag)
-				return coord;
+				return Arrays.asList(c, coord);
 		}
 		return null;
+	}    //getPartitionCoordinatorInfo()
+
+	public void checkToNotifyWriteOnKey(String key){
+		Integer writeCount = quorumWriteCheck.get(key);
+		// if writecount is null, there is no need to capture this write acknowledgement
+		// since the insert method call by the thread will have already returned
+		// since the MIN_WRITE_COUNT condition will have been satisfied due to previous responses.
+		if(writeCount != null){
+			writeCount++;
+			if(writeCount == MIN_WRITE_COUNT){
+				for(String insertKey : quorumWriteCheck.keySet()){
+					if(insertKey.equals(key)){
+						synchronized (insertKey){
+							insertKey.notify();
+						}
+						break;
+					}
+				}
+				quorumWriteCheck.remove(key);
+			}
+			else{
+				quorumWriteCheck.put(key,writeCount);
+			}
+		}
 	}
 
 	public String convertToPort(String avdID){
@@ -340,8 +449,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 							ContentValues contentValues = new ContentValues();
 							contentValues.put(KEY, record[0]);
 							contentValues.put(VALUE, record[1]);
-							dynamoHelper.insert(contentValues);
-							sendMessageToReplicas(INSERT_REPLICA_TAG + MSG_DELIMETER + msg);
+							insertVersionedEntry(contentValues);
+							sendMessage(msgSrc, INSERT_ACK_TAG + MSG_DELIMETER + selfPort +
+									MSG_DELIMETER+ record[0]);
+							sendMessageToReplicas(selfDhtPosition, INSERT_REPLICA_TAG +
+									MSG_DELIMETER + msgSrc + MSG_DELIMETER + msg);
 						}
 						else if(msgTag.equals(INSERT_REPLICA_TAG)){
 							String[] record = msg.split(CV_DELIMETER);
@@ -349,17 +461,58 @@ public class SimpleDynamoProvider extends ContentProvider {
 							ContentValues contentValues = new ContentValues();
 							contentValues.put(KEY, record[0]);
 							contentValues.put(VALUE, record[1]);
-							insertReplica(contentValues);
+							insertVersionedEntry(contentValues);
+							sendMessage(msgSrc, INSERT_ACK_TAG + MSG_DELIMETER + selfPort +
+									MSG_DELIMETER + record[0]);
 						}
 						else if(msgTag.equals(DELETE_TAG)){
 							dynamoHelper.delete(msg);
-							sendMessageToReplicas(DELETE_REPLICA_TAG + MSG_DELIMETER + msg);
+							sendMessage(msgSrc, DELETE_ACK_TAG + MSG_DELIMETER + selfPort +
+									MSG_DELIMETER + msg);
+							sendMessageToReplicas(selfDhtPosition, DELETE_REPLICA_TAG +
+									MSG_DELIMETER + msgSrc + MSG_DELIMETER + msg);
 						}
 						else if(msgTag.equals(DELETE_REPLICA_TAG)){
 							dynamoHelper.delete(msg);
+							sendMessage(msgSrc, DELETE_ACK_TAG + MSG_DELIMETER + selfPort +
+									MSG_DELIMETER + msg);
+						}
+						else if(msgTag.equals(INSERT_ACK_TAG) || msgTag.equals(DELETE_ACK_TAG)){
+							checkToNotifyWriteOnKey(msg);
 						}
 						else if(msgTag.equals(QUERY_TAG)){
+							if(msg.equals(ALL_PAIRS_QUERY)) {
+								// ALL_PAIRS_QUERY received in ServerTask should return all local pairs to msgSrc
+								Cursor cursor = dynamoHelper.query(LOCAL_PAIRS_QUERY);
 
+								String cursorToStr = convertCursorToString(cursor);
+								String msgToSend = QUERY_RESPONSE_TAG + MSG_DELIMETER + selfPort +
+										MSG_DELIMETER + msg + MSG_DELIMETER + cursorToStr;
+								sendMessage(msgSrc, msgToSend);
+							}
+							else{
+								// key query
+
+
+							}
+						}
+						else if(msgTag.equals(QUERY_RESPONSE_TAG)){
+							List<String> queryResults = queryMap.get(msg);
+							queryResults.add(msgArr[3]);
+
+							if(msg.equals(ALL_PAIRS_QUERY) && queryResults.size() == dhtNodes.size()){
+								// all records received from every node
+								for(String key : queryMap.keySet()){
+									if(key.equals(msg)){
+										synchronized (key){
+											key.notify();
+										}
+									}
+								}
+							}
+							else{
+								// key query response
+							}
 						}
 					}
 				}
