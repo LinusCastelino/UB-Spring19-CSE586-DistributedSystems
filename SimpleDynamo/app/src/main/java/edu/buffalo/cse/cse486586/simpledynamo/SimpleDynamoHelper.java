@@ -14,10 +14,12 @@ public class SimpleDynamoHelper extends SQLiteOpenHelper {
     private final String TABLE_NAME = "DYNAMO_TABLE";
     private final String KEY_COLUMN_NAME = "key";
     private final String VALUE_COLUMN_NAME = "value";
+    private final String VERSION_COLUMN_NAME = "version";
 
     private final String CREATE_TABLE_QUERY = "CREATE TABLE " + TABLE_NAME + "( " +
-                                                     KEY_COLUMN_NAME + " text PRIMARY KEY, " +
-                                                     VALUE_COLUMN_NAME + " text )";
+                                               KEY_COLUMN_NAME + " TEXT PRIMARY KEY, " +
+                                               VALUE_COLUMN_NAME + " TEXT, " +
+                                               VERSION_COLUMN_NAME + " INTEGER)";
     private final String DROP_TABLE_QUERY = "DROP TABLE IF EXISTS " + TABLE_NAME;
 
     private final String LOCAL_PAIRS_QUERY = "@";

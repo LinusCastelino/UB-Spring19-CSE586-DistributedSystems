@@ -39,6 +39,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 	private final Integer MIN_READ_COUNT = 2;
 	private final String KEY = "key";
 	private final String VALUE = "value";
+	private final String VERSION = "version";
 	private final String LOCAL_PAIRS_QUERY = "@";
 	private final String ALL_PAIRS_QUERY = "*";
 	private final String MSG_DELIMETER = ":";
@@ -137,10 +138,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 						+ selfPort + MSG_DELIMETER + insertKey + CV_DELIMETER + values.get(VALUE));
 			}
 			else{
-				String msgToSend = INSERT_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + insertKey +
+				String msgToSendPartial = MSG_DELIMETER + selfPort + MSG_DELIMETER + insertKey +
 									CV_DELIMETER + values.get(VALUE);
 				quorumWriteCheck.put(insertKey, 0);
-				sendMessage(convertToPort(partitionCoordinatorNode.getPort()), msgToSend);
+				sendMessage(convertToPort(partitionCoordinatorNode.getPort()), INSERT_TAG + msgToSendPartial);
+				sendMessageToReplicas((Integer)partitionCoordinatorInfo.get(0) , INSERT_REPLICA_TAG + msgToSendPartial);
 			}
 
 			synchronized (insertKey){
@@ -165,17 +167,15 @@ public class SimpleDynamoProvider extends ContentProvider {
 		Log.d(TAG, "Inserting Versioned Entry of - " + values.toString());
 
 		String insertKey = (String)values.get(KEY);
-		String insertValue = (String)values.get(VALUE);
 		Cursor cursor = dynamoHelper.query(insertKey);
 		if(cursor.getCount() == 0){
 			// first insert for the key
-			values.put(VALUE, 0 + MSG_DELIMETER + insertValue);   // 0 versioning used
+			values.put(VERSION, 0);   // 0 versioning used
 		}
 		else{
 			cursor.moveToFirst();
-			String storedValue = cursor.getString(cursor.getColumnIndex(VALUE));
-			Integer oldVersionNum = Integer.valueOf(storedValue.split(MSG_DELIMETER)[0]);
-			values.put(VALUE, ++oldVersionNum + MSG_DELIMETER + insertValue);
+			Integer oldVersionNum = cursor.getInt(cursor.getColumnIndex(VERSION));
+			values.put(VERSION, ++oldVersionNum);
 		}
 		dynamoHelper.insert(values);
 	}
@@ -209,15 +209,17 @@ public class SimpleDynamoProvider extends ContentProvider {
 				String keyHash = genHash(selection);
 				List<Object> partitionCoordinatorInfo = getPartitionCoordinatorInfo(keyHash);
 				DHTNode partitionCoordinatorNode = (DHTNode)(partitionCoordinatorInfo.get(1));
+				List<String> queryResults = new ArrayList<String>();
 				if(partitionCoordinatorNode.getPort().equals(selfPort)){
-					return dynamoHelper.query(selection);
+					Cursor selfQueryResults = dynamoHelper.query(selection);
+					queryResults.add(convertCursorToString(selfQueryResults));
 				}
 				else{
-					List<String> queryResults = new ArrayList<String>();
-					queryMap.put(selection, queryResults);
 					String msgToSend = QUERY_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selection;
-
+					sendMessage(convertToPort(partitionCoordinatorNode.getPort()), msgToSend);
+					sendMessageToReplicas((Integer)partitionCoordinatorInfo.get(0), msgToSend);
 				}
+				queryMap.put(selection, queryResults);
 			}
 			catch(NoSuchAlgorithmException nsae){
 				Log.e(TAG, "Error occured while generating hash of the query key " + selection);
@@ -236,8 +238,15 @@ public class SimpleDynamoProvider extends ContentProvider {
 			}
 		}
 
-		Cursor resultCursor = convertStringToCursor(queryMap.get(selection));
-		queryMap.remove(selection);
+		List<String> results = null;
+		synchronized (queryMap){
+			// synchronizing this operation so that no updates to a key are made once MIN_READ_COUNT
+			// responses are received
+			results = queryMap.get(selection);
+			queryMap.remove(selection);
+		}
+		Cursor resultCursor = convertQueryResultsToCursor(results);
+
 		return resultCursor;
 	}
 
@@ -272,9 +281,10 @@ public class SimpleDynamoProvider extends ContentProvider {
 							MSG_DELIMETER + selfPort + MSG_DELIMETER + selection);
 				}
 				else{
-					String msgToSend = DELETE_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selection;
+					String msgToSendPartial = MSG_DELIMETER + selfPort + MSG_DELIMETER + selection;
 					quorumWriteCheck.put(selection, 0);
-					sendMessage(convertToPort(partitionCoordinatorNode.getPort()), msgToSend);
+					sendMessage(convertToPort(partitionCoordinatorNode.getPort()), DELETE_TAG + msgToSendPartial);
+					sendMessageToReplicas((Integer)partitionCoordinatorInfo.get(0), DELETE_REPLICA_TAG + msgToSendPartial);
 				}
 
 				synchronized (selection){
@@ -337,11 +347,14 @@ public class SimpleDynamoProvider extends ContentProvider {
 			String cursorToStr = "";
 			int keyColumnIndex = cursor.getColumnIndex(KEY);
 			int valueColumnIndex = cursor.getColumnIndex(VALUE);
+			int versionColumnIndex = cursor.getColumnIndex(VERSION);
 
 			do{
 				cursorToStr += cursor.getString(keyColumnIndex);
 				cursorToStr += CV_DELIMETER;
 				cursorToStr += cursor.getString(valueColumnIndex);
+				cursorToStr += CV_DELIMETER;
+				cursorToStr += versionColumnIndex;
 				cursorToStr += CURSOR_REC_DELIMETER;
 			}while(cursor.moveToNext());
 
@@ -352,7 +365,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 		return null;
 	}    //convertCursorToSting()
 
-	public Cursor convertStringToCursor(List<String> results){
+	public Cursor convertQueryResultsToCursor(List<String> results){
 		MatrixCursor cursor = new MatrixCursor(new String[]{KEY, VALUE});
 
 		for(String result : results){
@@ -397,15 +410,15 @@ public class SimpleDynamoProvider extends ContentProvider {
 		if(writeCount != null){
 			writeCount++;
 			if(writeCount == MIN_WRITE_COUNT){
-				for(String insertKey : quorumWriteCheck.keySet()){
-					if(insertKey.equals(key)){
-						synchronized (insertKey){
-							insertKey.notify();
+				for(String waitKey : quorumWriteCheck.keySet()){
+					if(waitKey.equals(key)){
+						synchronized (waitKey){
+							waitKey.notify();
+							quorumWriteCheck.remove(waitKey);
 						}
 						break;
 					}
 				}
-				quorumWriteCheck.remove(key);
 			}
 			else{
 				quorumWriteCheck.put(key,writeCount);
@@ -452,8 +465,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 							insertVersionedEntry(contentValues);
 							sendMessage(msgSrc, INSERT_ACK_TAG + MSG_DELIMETER + selfPort +
 									MSG_DELIMETER+ record[0]);
-							sendMessageToReplicas(selfDhtPosition, INSERT_REPLICA_TAG +
-									MSG_DELIMETER + msgSrc + MSG_DELIMETER + msg);
+//							sendMessageToReplicas(selfDhtPosition, INSERT_REPLICA_TAG +
+//									MSG_DELIMETER + msgSrc + MSG_DELIMETER + msg);
 						}
 						else if(msgTag.equals(INSERT_REPLICA_TAG)){
 							String[] record = msg.split(CV_DELIMETER);
@@ -469,8 +482,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 							dynamoHelper.delete(msg);
 							sendMessage(msgSrc, DELETE_ACK_TAG + MSG_DELIMETER + selfPort +
 									MSG_DELIMETER + msg);
-							sendMessageToReplicas(selfDhtPosition, DELETE_REPLICA_TAG +
-									MSG_DELIMETER + msgSrc + MSG_DELIMETER + msg);
+//							sendMessageToReplicas(selfDhtPosition, DELETE_REPLICA_TAG +
+//									MSG_DELIMETER + msgSrc + MSG_DELIMETER + msg);
 						}
 						else if(msgTag.equals(DELETE_REPLICA_TAG)){
 							dynamoHelper.delete(msg);
