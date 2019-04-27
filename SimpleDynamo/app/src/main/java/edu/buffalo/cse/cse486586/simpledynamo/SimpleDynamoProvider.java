@@ -384,7 +384,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 		Map<String, VersionedValue> resultsMap = new HashMap<String, VersionedValue>();
 		for(String result : results){
-			if(!result.equals(NULL_STR)) {
+			if(result != null && !result.equals(NULL_STR)) {
 				String records[] = result.split(CURSOR_REC_DELIMETER);
 				for (int i = 0; i < records.length; i++) {
 					String record[] = records[i].split(CV_DELIMETER);
