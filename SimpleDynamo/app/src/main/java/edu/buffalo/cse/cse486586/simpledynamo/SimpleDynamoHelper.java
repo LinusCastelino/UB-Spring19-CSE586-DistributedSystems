@@ -24,7 +24,7 @@ public class SimpleDynamoHelper extends SQLiteOpenHelper {
 
     private final String LOCAL_PAIRS_QUERY = "@";
     private final String WHERE_CLAUSE = KEY_COLUMN_NAME + " = ?";
-    private final String[] RESULT_COLUMNS = new String[]{KEY_COLUMN_NAME, VALUE_COLUMN_NAME};
+    private final String[] RESULT_COLUMNS = new String[]{KEY_COLUMN_NAME, VALUE_COLUMN_NAME, VERSION_COLUMN_NAME};
 
     public SimpleDynamoHelper(Context context){
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
