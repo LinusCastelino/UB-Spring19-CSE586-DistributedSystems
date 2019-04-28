@@ -49,10 +49,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 	private final String CV_DELIMETER = "/";
 	private final String CURSOR_REC_DELIMETER = "#";
 	private final String INSERT_TAG = "I";
-//	private final String INSERT_REPLICA_TAG = "IR";
 	private final String INSERT_ACK_TAG = "IA";
 	private final String DELETE_TAG = "D";
-//	private final String DELETE_REPLICA_TAG = "DR";
 	private final String DELETE_ACK_TAG = "DA";
 	private final String QUERY_TAG = "Q";
 	private final String QUERY_REPLICAS_TAG = "QREP";
@@ -585,31 +583,12 @@ public class SimpleDynamoProvider extends ContentProvider {
 							insertVersionedEntry(contentValues);
 							sendMessage(convertToPort(msgSrc), INSERT_ACK_TAG + MSG_DELIMETER + selfPort +
 									MSG_DELIMETER+ record[0]);
-//							sendMessageToReplicas(selfDhtPosition, INSERT_REPLICA_TAG +
-//									MSG_DELIMETER + msgSrc + MSG_DELIMETER + msg);
 						}
-//						else if(msgTag.equals(INSERT_REPLICA_TAG)){
-//							String[] record = msg.split(CV_DELIMETER);
-//
-//							ContentValues contentValues = new ContentValues();
-//							contentValues.put(KEY, record[0]);
-//							contentValues.put(VALUE, record[1]);
-//							insertVersionedEntry(contentValues);
-//							sendMessage(convertToPort(msgSrc), INSERT_ACK_TAG + MSG_DELIMETER + selfPort +
-//									MSG_DELIMETER + record[0]);
-//						}
 						else if(msgTag.equals(DELETE_TAG)){
 							dynamoHelper.delete(msg);
 							sendMessage(convertToPort(msgSrc), DELETE_ACK_TAG + MSG_DELIMETER + selfPort +
 									MSG_DELIMETER + msg);
-//							sendMessageToReplicas(selfDhtPosition, DELETE_REPLICA_TAG +
-//									MSG_DELIMETER + msgSrc + MSG_DELIMETER + msg);
 						}
-//						else if(msgTag.equals(DELETE_REPLICA_TAG)){
-//							dynamoHelper.delete(msg);
-//							sendMessage(convertToPort(msgSrc), DELETE_ACK_TAG + MSG_DELIMETER + selfPort +
-//									MSG_DELIMETER + msg);
-//						}
 						else if(msgTag.equals(INSERT_ACK_TAG) || msgTag.equals(DELETE_ACK_TAG)){
 							checkToNotifyWriteOnKey(msg);
 						}
