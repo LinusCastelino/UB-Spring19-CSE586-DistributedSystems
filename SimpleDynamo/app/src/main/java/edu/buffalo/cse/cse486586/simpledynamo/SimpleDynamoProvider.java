@@ -460,6 +460,36 @@ public class SimpleDynamoProvider extends ContentProvider {
 		return cursor;
 	}    //processQueryResults()
 
+	public Cursor filterQueryResultsForHashRange(Cursor cursor, String coordinatorID, String predecessorID){
+		MatrixCursor resultCursor = new MatrixCursor(new String[]{KEY, VALUE, VERSION});
+
+		if(cursor.moveToFirst()){
+			int keyColumnIndex = cursor.getColumnIndex(KEY);
+			int valueColumnIndex = cursor.getColumnIndex(VALUE);
+			int versionColumnIndex = cursor.getColumnIndex(VERSION);
+
+			do{
+				String key = cursor.getString(keyColumnIndex);
+				try {
+					String keyHash = genHash(key);
+					if(belongsToPartition(coordinatorID, predecessorID, keyHash)){
+						resultCursor.newRow().add(KEY, key)
+											 .add(VALUE, cursor.getString(valueColumnIndex))
+											 .add(VERSION, cursor.getString(versionColumnIndex));
+					}
+				}
+				catch (NoSuchAlgorithmException nsae){
+					Log.e(TAG, "Exception occured while generating hash of " + key
+							+ " in filterQueryResultsForHashRange()");
+					nsae.printStackTrace();
+				}
+
+			}while(cursor.moveToNext());
+		}
+
+		return resultCursor;
+	}
+
 	public Map<String, VersionedValue> convertQueryResultsToVersionedValueMap( List<String> results ){
 		Map<String, VersionedValue> resultsMap = new HashMap<String, VersionedValue>();
 		for(String result : results){
@@ -495,18 +525,21 @@ public class SimpleDynamoProvider extends ContentProvider {
 			DHTNode coord = dhtNodes.get(c);
 			DHTNode pred = dhtNodes.get(p%limit);
 
-			boolean flag = false;
-			if (pred.getHash().compareTo(keyHash) < 0 && keyHash.compareTo(coord.getHash()) <= 0)
-				flag = true;
-			if (pred.getHash().compareTo(coord.getHash()) > 0    // last partition check
-					&& (pred.getHash().compareTo(keyHash) < 0 || keyHash.compareTo(coord.getHash()) <= 0))
-				flag = true;
-
-			if(flag)
+			if(belongsToPartition(coord.getHash(), pred.getHash(), keyHash))
 				return Arrays.asList(c, coord);
 		}
 		return null;
 	}    //getPartitionCoordinatorInfo()
+
+	public Boolean belongsToPartition(String coordicatorID, String predecessorID, String keyHash){
+		boolean flag = false;
+		if (predecessorID.compareTo(keyHash) < 0 && keyHash.compareTo(coordicatorID) <= 0)
+			flag = true;
+		if (predecessorID.compareTo(coordicatorID) > 0    // last partition check
+				&& (predecessorID.compareTo(keyHash) < 0 || keyHash.compareTo(coordicatorID) <= 0))
+			flag = true;
+		return flag;
+	}
 
 	public void checkToNotifyWriteOnKey(String key){
 		Integer writeCount = quorumWriteCheck.get(key);
@@ -609,7 +642,10 @@ public class SimpleDynamoProvider extends ContentProvider {
 							sendMessage(convertToPort(msgSrc), msgToSend);
 						}
 						else if(msgTag.equals(QUERY_REPLICAS_TAG)){
-							Cursor cursor = dynamoHelper.queryPartitionKeys(msg, msgArr[3]);
+							Cursor cursor = dynamoHelper.query(LOCAL_PAIRS_QUERY);
+
+							cursor = filterQueryResultsForHashRange(cursor, msg, msgArr[3]);
+
 							String cursorToStr = convertCursorToString(cursor);
 							String msgToSend = QUERY_RESPONSE_TAG + MSG_DELIMETER + selfPort +
 									MSG_DELIMETER + QUERY_REPLICAS_TAG + MSG_DELIMETER + cursorToStr;

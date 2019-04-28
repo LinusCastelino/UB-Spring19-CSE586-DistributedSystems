@@ -66,13 +66,4 @@ public class SimpleDynamoHelper extends SQLiteOpenHelper {
             return db.query(TABLE_NAME, RESULT_COLUMNS, WHERE_CLAUSE, new String[]{queryKey},
                             null, null, null);
     }
-
-    public Cursor queryPartitionKeys(String coordinatorID, String predecessorID){
-        SQLiteDatabase db = this.getReadableDatabase();
-
-        String searchClause = KEY_COLUMN_NAME + " <= ? AND " + KEY_COLUMN_NAME + " > ?";
-        return db.query(TABLE_NAME, RESULT_COLUMNS, searchClause, new String[]{coordinatorID, predecessorID},
-                        null, null, null);
-
-    }
 }
