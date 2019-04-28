@@ -40,6 +40,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 	private final Integer SERVER_PORT = 10000;
 	private final Integer MIN_WRITE_COUNT = 2;
 	private final Integer MIN_READ_COUNT = 2;
+	private final Integer REPLICATION_COUNT = 2;
 	private final String KEY = "key";
 	private final String VALUE = "value";
 	private final String VERSION = "version";
@@ -55,12 +56,17 @@ public class SimpleDynamoProvider extends ContentProvider {
 	private final String QUERY_TAG = "Q";
 	private final String QUERY_REPLICAS_TAG = "QREP";
 	private final String QUERY_RESPONSE_TAG = "QR";
+	private final String FAILURE_RECOVERY = "FR";
+	private final String AVD_PARTITION_RECORDS = "APR";
+	private final String SELF_REPLICA = "SR";
 	private final String NULL_STR = "null";
 
 	private String selfPort = null;
 	private String selfId = null;
+	private String predecessorId = null;
 	private Integer selfDhtPosition = null;
 	private List<DHTNode> dhtNodes = null;
+	private List<String> failedPorts = null;
 
 	private SimpleDynamoHelper dynamoHelper = null;
 
@@ -75,6 +81,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 		dynamoHelper = new SimpleDynamoHelper(this.getContext());
 		queryMap = new HashMap<String, List<String>>();
 		quorumWriteCheck = new HashMap<String, Integer>();
+		failedPorts = new ArrayList<String>();
 
 		try{
 			ServerSocket serverSocket = new ServerSocket(SERVER_PORT);
@@ -233,7 +240,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 		List<String> results = getResultsListFromQueryMap(selection);
 
-//		System.out.println(results);
 		return processQueryResults(results);
 	}
 
@@ -327,16 +333,23 @@ public class SimpleDynamoProvider extends ContentProvider {
 		if(fileobj.exists()){
 			Log.d(TAG, "FirstRun.txt exists. This app has been restarted");
 
-			String msgToSend = QUERY_REPLICAS_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selfId
-					+ MSG_DELIMETER + getPredecessorID();
-			List<String> queryResults = new ArrayList<String>();
-			queryMap.put(QUERY_REPLICAS_TAG, queryResults);
-			sendMessageToReplicas(selfDhtPosition, msgToSend);
+			String msgToSend = QUERY_REPLICAS_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER +
+								FAILURE_RECOVERY + MSG_DELIMETER;
+			String msgToSend1 = msgToSend + SELF_REPLICA + MSG_DELIMETER + selfDhtPosition;
+			String msgToSend2 = msgToSend + AVD_PARTITION_RECORDS;
 
-			synchronized (QUERY_REPLICAS_TAG){
+			List<String> queryResults = new ArrayList<String>();
+			queryMap.put(FAILURE_RECOVERY, queryResults);
+
+			String successorPort = dhtNodes.get((selfDhtPosition + 1) % dhtNodes.size()).getPort();
+			List<String> replicatedPredsPorts = getReplicatedPreds();
+			sendMessage(convertToPort(successorPort), msgToSend1);
+			sendMessageToPorts(replicatedPredsPorts, msgToSend2);
+
+			synchronized (FAILURE_RECOVERY){
 				try{
 					Log.d(TAG, "Initiating wait for replicas query");
-					QUERY_REPLICAS_TAG.wait();
+					FAILURE_RECOVERY.wait();
 				}
 				catch(InterruptedException ie){
 					Log.e(TAG, "Exception encountered while initiating wait on replica query");
@@ -344,7 +357,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				}
 			}
 			Log.d(TAG, "Wait for replicas query ended");
-			List<String> results = getResultsListFromQueryMap(QUERY_REPLICAS_TAG);
+			List<String> results = getResultsListFromQueryMap(FAILURE_RECOVERY);
 			Map<String, VersionedValue> resultsMap = convertQueryResultsToVersionedValueMap(results);
 
 			for(Map.Entry<String, VersionedValue> entry : resultsMap.entrySet()){
@@ -369,13 +382,27 @@ public class SimpleDynamoProvider extends ContentProvider {
 		}
 	}
 
-    public String getPredecessorID(){
+    public String getPredecessorID(Integer dhtPosition){
 		Integer predecessorPosition = null;
-		if(selfDhtPosition == 0)
+		if(dhtPosition == 0)
 			predecessorPosition = dhtNodes.size() - 1;
 		else
-			predecessorPosition = selfDhtPosition - 1;
+			predecessorPosition = dhtPosition - 1;
 		return dhtNodes.get(predecessorPosition).getHash();
+	}
+
+	public List<String> getReplicatedPreds(){
+		Integer curPosition = selfDhtPosition;
+		List<String> ports = new ArrayList<String>();
+
+		for(int i = 0; i < REPLICATION_COUNT ; i++) {
+			if (curPosition == 0)
+				curPosition = dhtNodes.size();
+			curPosition--;
+			String predPort = dhtNodes.get(curPosition).getPort();
+			ports.add(convertToPort(predPort));
+		}
+		return ports;
 	}
 
 	public void setupDhtNodesList(){
@@ -400,6 +427,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				break;
 			}
 		}
+		predecessorId = getPredecessorID(selfDhtPosition);
 	}
 
 	public List<String> getResultsListFromQueryMap(String key){
@@ -413,8 +441,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 		return results;
 	}
 
-    public void sendMessage(String port, String msg){
-		new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, port, msg);
+    public void sendMessage(String port, String msgToSend){
+		new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, port, msgToSend);
 	}
 
 	public void sendMessageToReplicas(Integer dhtPosition, String msgToSend){
@@ -422,6 +450,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 			DHTNode replicaSuccessor = dhtNodes.get((dhtPosition + i) % dhtNodes.size());
 			sendMessage(convertToPort(replicaSuccessor.getPort()), msgToSend);
 		}
+	}
+
+	public void sendMessageToPorts(List<String> ports, String msgToSend){
+		for(String port : ports)
+			sendMessage(port, msgToSend);
 	}
 
 	public String convertCursorToString(Cursor cursor){
@@ -460,7 +493,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 		return cursor;
 	}    //processQueryResults()
 
-	public Cursor filterQueryResultsForHashRange(Cursor cursor, String coordinatorID, String predecessorID){
+	public Cursor filterQueryResultsForHashRange(Cursor cursor, String coordID, String predID){
 		MatrixCursor resultCursor = new MatrixCursor(new String[]{KEY, VALUE, VERSION});
 
 		if(cursor.moveToFirst()){
@@ -472,7 +505,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				String key = cursor.getString(keyColumnIndex);
 				try {
 					String keyHash = genHash(key);
-					if(belongsToPartition(coordinatorID, predecessorID, keyHash)){
+					if(belongsToPartition(coordID, predID, keyHash)){
 						resultCursor.newRow().add(KEY, key)
 											 .add(VALUE, cursor.getString(valueColumnIndex))
 											 .add(VERSION, cursor.getString(versionColumnIndex));
@@ -531,12 +564,12 @@ public class SimpleDynamoProvider extends ContentProvider {
 		return null;
 	}    //getPartitionCoordinatorInfo()
 
-	public Boolean belongsToPartition(String coordicatorID, String predecessorID, String keyHash){
+	public Boolean belongsToPartition(String coordID, String predID, String keyHash){
 		boolean flag = false;
-		if (predecessorID.compareTo(keyHash) < 0 && keyHash.compareTo(coordicatorID) <= 0)
+		if (predID.compareTo(keyHash) < 0 && keyHash.compareTo(coordID) <= 0)
 			flag = true;
-		if (predecessorID.compareTo(coordicatorID) > 0    // last partition check
-				&& (predecessorID.compareTo(keyHash) < 0 || keyHash.compareTo(coordicatorID) <= 0))
+		if (predID.compareTo(coordID) > 0    // last partition check
+				&& (predID.compareTo(keyHash) < 0 || keyHash.compareTo(coordID) <= 0))
 			flag = true;
 		return flag;
 	}
@@ -627,7 +660,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 						}
 						else if(msgTag.equals(QUERY_TAG)){
 							String query = null;
-							if(msg.equals(ALL_PAIRS_QUERY))
+							if(msg.equals(ALL_PAIRS_QUERY) || msg.equals(LOCAL_PAIRS_QUERY))
 								// ALL_PAIRS_QUERY received in ServerTask should return all local pairs to msgSrc
 								query = LOCAL_PAIRS_QUERY;
 							else
@@ -644,11 +677,19 @@ public class SimpleDynamoProvider extends ContentProvider {
 						else if(msgTag.equals(QUERY_REPLICAS_TAG)){
 							Cursor cursor = dynamoHelper.query(LOCAL_PAIRS_QUERY);
 
-							cursor = filterQueryResultsForHashRange(cursor, msg, msgArr[3]);
+							if(msgArr[3].equals(SELF_REPLICA)){
+								Integer dhtPosition = Integer.valueOf(msgArr[4]);
+								cursor = filterQueryResultsForHashRange(cursor,
+										dhtNodes.get(dhtPosition).getHash(), getPredecessorID(dhtPosition));
+							}
+							else if(msgArr[3].equals(AVD_PARTITION_RECORDS)){
+								cursor = filterQueryResultsForHashRange(cursor, selfId, predecessorId);
+							}
+
 
 							String cursorToStr = convertCursorToString(cursor);
 							String msgToSend = QUERY_RESPONSE_TAG + MSG_DELIMETER + selfPort +
-									MSG_DELIMETER + QUERY_REPLICAS_TAG + MSG_DELIMETER + cursorToStr;
+									MSG_DELIMETER + msg + MSG_DELIMETER + cursorToStr;
 							sendMessage(convertToPort(msgSrc), msgToSend);
 						}
 						else if(msgTag.equals(QUERY_RESPONSE_TAG)){
@@ -656,10 +697,17 @@ public class SimpleDynamoProvider extends ContentProvider {
 							if(queryResults != null) {
 								queryResults.add(msgArr[3]);
 
-								if (msg.equals(ALL_PAIRS_QUERY) && queryResults.size() == dhtNodes.size()) {
+								if (msg.equals(ALL_PAIRS_QUERY) && queryResults.size() == (dhtNodes.size() - failedPorts.size())) {
 									// all records received from every node
 									checkToNotifyReadOnKey(ALL_PAIRS_QUERY);
-								} else if (!msg.equals(ALL_PAIRS_QUERY) && queryResults.size() == MIN_READ_COUNT) {
+								}
+								if (msg.equals(FAILURE_RECOVERY) && queryResults.size() == 3) {
+									// size = 3 because on recovery, the avd queries 1 successor
+									// for its own replica and 2 predecessors for the records
+									// belonging to their own partition space
+									checkToNotifyReadOnKey(FAILURE_RECOVERY);
+								}
+								else if (!msg.equals(ALL_PAIRS_QUERY) && !msg.equals(FAILURE_RECOVERY) && queryResults.size() == MIN_READ_COUNT) {
 									// key query response
 									checkToNotifyReadOnKey(msg);
 								}
@@ -713,18 +761,24 @@ public class SimpleDynamoProvider extends ContentProvider {
 					if(br.readLine().equals(msgToSend))
 						break;
 				}
+
+				if(failedPorts.contains(port))
+					failedPorts.remove(port);
 			}
 			catch(SocketTimeoutException ste){
 				Log.e(TAG, "Socket timeout exception encountered in ClientTask - " + ste.getMessage());
 				ste.printStackTrace();
+				addToFailedPorts(port);
 			}
 			catch (IOException ioe){
 				Log.e(TAG, "IO exception encountered in ClientTask - " + ioe.getMessage());
 				ioe.printStackTrace();
+				addToFailedPorts(port);
 			}
 			catch(Exception e){
 				Log.e(TAG, "General exception encountered in ClientTask - " + e.getMessage());
 				e.printStackTrace();
+				addToFailedPorts(port);
 			}
 			finally {
 				try{
@@ -742,6 +796,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 			}
 
 			return null;
+		}
+
+		public void addToFailedPorts(String port){
+			if(!failedPorts.contains(port))
+				failedPorts.add(port);
 		}
 	}
 
