@@ -161,17 +161,36 @@ public class SimpleDynamoProvider extends ContentProvider {
 		Log.d(TAG, "Inserting Versioned Entry - " + values.toString());
 
 		String insertKey = (String)values.get(KEY);
+		String insertValue = (String)values.get(VALUE);
 		Cursor cursor = dynamoHelper.query(insertKey);
 		if(cursor.getCount() == 0){
 			// first insert for the key
 			values.put(VERSION, 0);   // 0 versioning used
+			dynamoHelper.insert(values);
 		}
 		else{
 			cursor.moveToFirst();
-			Integer oldVersionNum = cursor.getInt(cursor.getColumnIndex(VERSION));
-			values.put(VERSION, ++oldVersionNum);
+			String storedValue = cursor.getString(cursor.getColumnIndex(VALUE));
+			Integer storedVersionNum = cursor.getInt(cursor.getColumnIndex(VERSION));
+			if(!insertValue.equals(storedValue)) {
+				// only insert if value is different than what is stored
+				if(values.containsKey(VERSION)){
+					// during failure recovery we receive the version number from replicas
+					Integer newVersion = (Integer)values.get(VERSION);
+					if(newVersion >= storedVersionNum) {
+						// if the version of data received from replica is lesser than what this AVD already has,
+						// we reject the update.
+						values.put(VERSION, ++storedVersionNum);
+						dynamoHelper.insert(values);
+					}
+				}
+				else {
+					values.put(VERSION, ++storedVersionNum);
+					dynamoHelper.insert(values);
+				}
+			}
 		}
-		dynamoHelper.insert(values);
+
 	}
 
 	@Override
@@ -364,6 +383,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 				ContentValues contentValues = new ContentValues();
 				contentValues.put(KEY, entry.getKey());
 				contentValues.put(VALUE, entry.getValue().getValue());
+				contentValues.put(VERSION, entry.getValue().getVersion());
 				insertVersionedEntry(contentValues);
 			}
 			Log.d(TAG, "Failure recovery completed");
@@ -762,21 +782,24 @@ public class SimpleDynamoProvider extends ContentProvider {
 						break;
 				}
 
-				if(failedPorts.contains(port))
-					failedPorts.remove(port);
+				if(failedPorts.contains(port)) {
+					synchronized (failedPorts) {
+						failedPorts.remove(port);
+					}
+				}
 			}
 			catch(SocketTimeoutException ste){
-				Log.e(TAG, "Socket timeout exception encountered in ClientTask - " + ste.getMessage());
+				Log.e(TAG, "Socket timeout exception encountered in ClientTask while sending message to port " + port);
 				ste.printStackTrace();
 				addToFailedPorts(port);
 			}
 			catch (IOException ioe){
-				Log.e(TAG, "IO exception encountered in ClientTask - " + ioe.getMessage());
+				Log.e(TAG, "IO exception encountered in ClientTask while sending message to port " + port);
 				ioe.printStackTrace();
 				addToFailedPorts(port);
 			}
 			catch(Exception e){
-				Log.e(TAG, "General exception encountered in ClientTask - " + e.getMessage());
+				Log.e(TAG, "General exception encountered in ClientTask while sending message to port " + port);
 				e.printStackTrace();
 				addToFailedPorts(port);
 			}
@@ -799,8 +822,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 		}
 
 		public void addToFailedPorts(String port){
-			if(!failedPorts.contains(port))
-				failedPorts.add(port);
+			if(!failedPorts.contains(port)) {
+				synchronized (failedPorts) {
+					failedPorts.add(port);
+				}
+			}
 		}
 	}
 
