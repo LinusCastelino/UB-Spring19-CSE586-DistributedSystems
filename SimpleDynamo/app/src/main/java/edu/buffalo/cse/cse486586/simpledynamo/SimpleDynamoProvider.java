@@ -1,6 +1,8 @@
 package edu.buffalo.cse.cse486586.simpledynamo;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -14,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.Formatter;
 import java.util.HashMap;
 import java.util.List;
@@ -52,6 +55,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 //	private final String DELETE_REPLICA_TAG = "DR";
 	private final String DELETE_ACK_TAG = "DA";
 	private final String QUERY_TAG = "Q";
+	private final String QUERY_REPLICAS_TAG = "QREP";
 	private final String QUERY_RESPONSE_TAG = "QR";
 	private final String NULL_STR = "null";
 
@@ -71,6 +75,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 		selfPort = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
 
 		dynamoHelper = new SimpleDynamoHelper(this.getContext());
+		queryMap = new HashMap<String, List<String>>();
+		quorumWriteCheck = new HashMap<String, Integer>();
 
 		try{
 			ServerSocket serverSocket = new ServerSocket(SERVER_PORT);
@@ -90,34 +96,13 @@ public class SimpleDynamoProvider extends ContentProvider {
 			nsae.printStackTrace();
 		}
 
-		queryMap = new HashMap<String, List<String>>();
-		quorumWriteCheck = new HashMap<String, Integer>();
-
 		dhtNodes = new ArrayList<DHTNode>();
-		for(String nodePort : DHT_NODE_PORTS){
-			DHTNode node = new DHTNode();
-			node.setPort(nodePort);
-			try {
-				node.setHash(genHash(nodePort));
-			}
-			catch (NoSuchAlgorithmException nsae){
-				Log.e(TAG, "Exception encountered while generating hash for node " + nodePort);
-				nsae.printStackTrace();
-			}
-			dhtNodes.add(node);
-		}
+		setupDhtNodesList();
 
-		Collections.sort(dhtNodes, new DHTNodesComparator());
-
-		for(int i=0; i<dhtNodes.size(); i++) {
-			if (dhtNodes.get(i).getPort().equals(selfPort)) {
-				selfDhtPosition = i;
-				break;
-			}
-		}
+		checkForFailureRecovery();
 
 		return true;
-	}
+	}    //onCreate()
 
 	@Override
 	public Uri insert(Uri uri, ContentValues values) {
@@ -248,13 +233,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 			Log.d(TAG, "Wait for " + MIN_READ_COUNT + " query results of query " + selection + " ended.");
 		}
 
-		List<String> results = null;
-		synchronized (queryMap){
-			// synchronizing this operation so that no updates to a key are made once MIN_READ_COUNT
-			// responses are received
-			results = queryMap.get(selection);
-			queryMap.remove(selection);
-		}
+		List<String> results = getResultsListFromQueryMap(selection);
+
 //		System.out.println(results);
 		return processQueryResults(results);
 	}
@@ -344,6 +324,97 @@ public class SimpleDynamoProvider extends ContentProvider {
         return formatter.toString();
     }
 
+    public void checkForFailureRecovery(){
+		File fileobj = new File(this.getContext().getFilesDir(), "FirstRun.txt");
+		if(fileobj.exists()){
+			Log.d(TAG, "FirstRun.txt exists. This app has been restarted");
+
+			String msgToSend = QUERY_REPLICAS_TAG + MSG_DELIMETER + selfPort + MSG_DELIMETER + selfId
+					+ MSG_DELIMETER + getPredecessorID();
+			List<String> queryResults = new ArrayList<String>();
+			queryMap.put(QUERY_REPLICAS_TAG, queryResults);
+			sendMessageToReplicas(selfDhtPosition, msgToSend);
+
+			synchronized (QUERY_REPLICAS_TAG){
+				try{
+					Log.d(TAG, "Initiating wait for replicas query");
+					QUERY_REPLICAS_TAG.wait();
+				}
+				catch(InterruptedException ie){
+					Log.e(TAG, "Exception encountered while initiating wait on replica query");
+					ie.printStackTrace();
+				}
+			}
+			Log.d(TAG, "Wait for replicas query ended");
+			List<String> results = getResultsListFromQueryMap(QUERY_REPLICAS_TAG);
+			Map<String, VersionedValue> resultsMap = convertQueryResultsToVersionedValueMap(results);
+
+			for(Map.Entry<String, VersionedValue> entry : resultsMap.entrySet()){
+				ContentValues contentValues = new ContentValues();
+				contentValues.put(KEY, entry.getKey());
+				contentValues.put(VALUE, entry.getValue().getValue());
+				insertVersionedEntry(contentValues);
+			}
+			Log.d(TAG, "Failure recovery completed");
+		}
+		else{
+			Log.d(TAG, "FirstRun.txt does not exist. This is a fresh installation");
+			try {
+				FileOutputStream outputStream = this.getContext().openFileOutput("FirstRun.txt", Context.MODE_PRIVATE);
+				outputStream.write(("First run - " + new Date()).getBytes());
+				outputStream.close();
+			}
+			catch(Exception e){
+				Log.e(TAG, "Exception encountered while trying to write to FirstRun.txt");
+				e.printStackTrace();
+			}
+		}
+	}
+
+    public String getPredecessorID(){
+		Integer predecessorPosition = null;
+		if(selfDhtPosition == 0)
+			predecessorPosition = dhtNodes.size() - 1;
+		else
+			predecessorPosition = selfDhtPosition - 1;
+		return dhtNodes.get(predecessorPosition).getHash();
+	}
+
+	public void setupDhtNodesList(){
+		for(String nodePort : DHT_NODE_PORTS){
+			DHTNode node = new DHTNode();
+			node.setPort(nodePort);
+			try {
+				node.setHash(genHash(nodePort));
+			}
+			catch (NoSuchAlgorithmException nsae){
+				Log.e(TAG, "Exception encountered while generating hash for node " + nodePort);
+				nsae.printStackTrace();
+			}
+			dhtNodes.add(node);
+		}
+
+		Collections.sort(dhtNodes, new DHTNodesComparator());
+
+		for(int i=0; i<dhtNodes.size(); i++) {
+			if (dhtNodes.get(i).getPort().equals(selfPort)) {
+				selfDhtPosition = i;
+				break;
+			}
+		}
+	}
+
+	public List<String> getResultsListFromQueryMap(String key){
+		List<String> results = null;
+		synchronized (queryMap){
+			// synchronizing this operation so that no updates to a key are made once MIN_READ_COUNT
+			// responses are received
+			results = queryMap.get(key);
+			queryMap.remove(key);
+		}
+		return results;
+	}
+
     public void sendMessage(String port, String msg){
 		new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, port, msg);
 	}
@@ -382,6 +453,16 @@ public class SimpleDynamoProvider extends ContentProvider {
 	public Cursor processQueryResults(List<String> results){
 		MatrixCursor cursor = new MatrixCursor(new String[]{KEY, VALUE});
 
+		Map<String, VersionedValue> resultsMap = convertQueryResultsToVersionedValueMap(results);
+
+		for(Map.Entry<String, VersionedValue> entry : resultsMap.entrySet()) {
+			cursor.newRow().add(KEY, entry.getKey()).add(VALUE, entry.getValue().getValue());
+		}
+
+		return cursor;
+	}    //processQueryResults()
+
+	public Map<String, VersionedValue> convertQueryResultsToVersionedValueMap( List<String> results ){
 		Map<String, VersionedValue> resultsMap = new HashMap<String, VersionedValue>();
 		for(String result : results){
 			if(result != null && !result.equals(NULL_STR)) {
@@ -406,13 +487,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 				}
 			}
 		}
-
-		for(Map.Entry<String, VersionedValue> entry : resultsMap.entrySet()) {
-			cursor.newRow().add(KEY, entry.getKey()).add(VALUE, entry.getValue().getValue());
-		}
-
-		return cursor;
-	}    //convertStringToCursor()
+		return resultsMap;
+	}
 
 	public List<Object> getPartitionCoordinatorInfo(String keyHash){
 
@@ -551,6 +627,13 @@ public class SimpleDynamoProvider extends ContentProvider {
 							String cursorToStr = convertCursorToString(cursor);
 							String msgToSend = QUERY_RESPONSE_TAG + MSG_DELIMETER + selfPort +
 									MSG_DELIMETER + msg + MSG_DELIMETER + cursorToStr;
+							sendMessage(convertToPort(msgSrc), msgToSend);
+						}
+						else if(msgTag.equals(QUERY_REPLICAS_TAG)){
+							Cursor cursor = dynamoHelper.queryPartitionKeys(msg, msgArr[3]);
+							String cursorToStr = convertCursorToString(cursor);
+							String msgToSend = QUERY_RESPONSE_TAG + MSG_DELIMETER + selfPort +
+									MSG_DELIMETER + QUERY_REPLICAS_TAG + MSG_DELIMETER + cursorToStr;
 							sendMessage(convertToPort(msgSrc), msgToSend);
 						}
 						else if(msgTag.equals(QUERY_RESPONSE_TAG)){
