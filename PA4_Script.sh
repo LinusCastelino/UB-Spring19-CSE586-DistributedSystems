@@ -1,6 +1,8 @@
 #!/bin/bash
 
-max_runs=10
+max_runs=$1
+echo "Running grading script " $max_runs "times";
+echo "";
 
 for i in `seq 1 $max_runs`
 do
